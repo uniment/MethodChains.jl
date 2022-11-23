@@ -1,5 +1,10 @@
 module MethodChains
 
-# Write your package code here.
+export @mc, MethodChainLink
+include("mc.jl")
+include("methodchaintypes.jl")
+include("repl_init.jl")
+
+using .Internals
 
 end

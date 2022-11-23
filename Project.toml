@@ -3,6 +3,9 @@ uuid = "8273b447-2325-479c-bd8f-672236b360ca"
 authors = ["uniment <uniment@gmail.com> and contributors"]
 version = "0.1.0"
 
+[deps]
+REPL = "3fa0cd96-eef1-5676-8a61-b3b8758bbffb"
+
 [compat]
 julia = "1"
 
