@@ -1,6 +1,6 @@
 # *MethodChains.jl*
 
-## *Welcome!*
+## Welcome!
 
 This is an ambitious (and somewhat experimental, and fun!) approach to generalize method chaining and function composition.
 
@@ -160,7 +160,7 @@ Namely:
 
 If it's desired to override the default behavior of method calling, you can make an explicit assignment to `it`.
 
-## *Examples*
+## Examples
 
 *Example from Chain.jl Readme*
 
@@ -202,7 +202,7 @@ a.{b(it[3])}
 [1,2,3].{map({it^2}, it)}
 [1,2,3].{join(it, ", ")}
 "1".{parse(Int, it)} == 1
-(:a,:b).{reverse, (it...,)}
+(:a,:b).{reverse}
 ```
 
 
@@ -259,19 +259,14 @@ process_bags.{into(airplane, it, pallets)}
 
 # *Advanced Use*
 
-This is still a work in progress; ignore the following for now, and check back later.
----
-
 That was fun! This chaining syntax allows for really basic composition, like `x.{f, g, h}`, but also some more advanced stuff too like `x.{i for i ∈ 1:it}`. Why would you use this instead of a function? Because on every line you're presumed *most likely* to call a function on or otherwise manipulate the object `it`, this default behavior frequently enables very short expressions. It also hints to the IDE autocomplete what type of object you're likely about to call a function on, as well as providing a natural "flow" of thought as the object passes through a sequence of transformations. Finally, calling the chain immediately (e.g. `x.{exprs}`) doesn't allocate a function, keeping compile time minimized, while still being a shorthand for creating locally-scoped variables.
 
 But there's even more to it. (This is the most experimental feature of this syntax, so please experiment with it and offer feedback!)
 
-## *2-dimensional chains*
+## 2-dimensional chains
 
-This is still a work in progress.
----
 
-So far we've discussed one-dimensional chains, wherein a single object is the "star of the show" and undergoes a sequence of transformations in time. However, we can also express two-dimensional chains, wherein multiple objects spread across space undergo their own transformation chains, and occasionally interact, through time. 
+So far we've discussed one-dimensional chains, wherein a single object undergoes a sequence of transformations in time. However, we can also express two-dimensional chains, wherein multiple objects spread across space undergo their own transformation chains, and occasionally interact, through time. 
 
 Take this for example:
 
@@ -287,27 +282,17 @@ Take this for example:
 ```
 The result of this chain is equivalent to `(h(g(f(1)))+3, f(h(g(2)))*2, g(f(h(3)))+1)`. Notice that the expression represents three chains; the three input elements have been splatted across the top row, and the values waterfall down to the bottom where they are collected into a tuple. The pronoun `it` is, again, local to each chain, and the pronoun `them` slurps up all unclaimed adjacent `it`s into a tuple.
 
-(1+1im).{
-    real(it)    imag(it)
-    it^2        it^2
-    Complex(them)
-}
-
-Here, the input was not splatted across the top row. When the next row has more elements than the last, and the last did not splat, then the last element of the row above is copied in.
-
-You can also have interactions:
 ```julia
-(a, b, c).{
-    it...
-    it      it+1    it+2
-    f(them...)      it
-    g(them...)
+(1+1im).{
+    real        imag
+    it^2        it^2
+    Complex(them...)
 }
 ```
 
-The result of this chain is `g(f(a, b+1), c+2)`.
+Here, the input was not splatted across the top row. When the next row has more elements than the last, and the last did not splat, then the last element of the row above is copied in. Notice that after the chains, the two chains came together and interacted.
 
-It is presumed that each line will have the same number of expressions as the one above it. However, if it has less, then unclaimed adjacent `it`s are slurped into a tuple `them` (if present). Note that individual chains end when they are slurped, and any local variables associated with them are discarded.
+It is presumed that each line will have the same number of expressions as the one above it. But if it doesn't, or if there is any splat on the previous line, or if there's any expression of `them` on the next line, then all the individual chains terminate, their values are collected into `them`, and new chains commence.
 
 Values can also be discarded, which causes their respective chains to end with them:
 
@@ -324,25 +309,29 @@ In this case, the return value is a simple tuple `(a,)`. Values drop off the rig
 
 Values can also be duplicated, starting new chains:
 ```julia
-(1,2).{
-    it      it            # 1,2
-    it      it      it+1  # 1,2,3
-    them.+1               # 2,3,4
-    it      them.+1       # 2,4,5
+(1).{
+    it                      # 1
+    it      it+1            # 1,2
+    it      it      it+1    # 1,2,3
+    them.+1...              # 2,3,4
+    it      them.+1...      # 2,3,4,5
+    them                    # collect at end
 }
 ```
-In this case, the return value is `(2, 4, 5)`.
+In this case, the return value is `(2, 3, 4, 5)`.
 
-New chains can also be instantiated with an assignment to `it`.
+New chains can also be instantiated with an assignment to `it`. Previous values can also be splatted across new rows:
 
-Previous values can also be splatted across new rows:
-
+```julia
 (1,2).{
+    it...
     it      (it, it+1)...
     it      it              it
+    them
 }
+```
 
-The return value here is (1, 2, 3).
+The return value here is `(1, 2, 3)`.
 
 
 # Performance Considerations

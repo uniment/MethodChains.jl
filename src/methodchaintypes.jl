@@ -13,7 +13,7 @@ Base.show(io::IO, f::MethodChainLink{ex, F}) where {ex, F} = print(io, "$ex")
 struct MethodMultiChainLink{ex, F}<:AbstractMethodChainLink f::F end
 MethodMultiChainLink{ex}(f::F) where {ex, F} = MethodMultiChainLink{ex, F}(f)
 MethodMultiChainLink(f) = MethodMultiChainLink{nameof(f)}(f)
-(f::MethodMultiChainLink)(args) = f.f(args...)
+(f::MethodMultiChainLink)(args) = f.f(args)
 Base.show(io::IO, f::MethodMultiChainLink{ex, F}) where {ex, F} = print(io, "$ex")
 
 struct BroadcastingMethodChainLink{ex, F}<:AbstractBroadcastingMethodChainLink f::F end
@@ -25,7 +25,7 @@ Base.show(io::IO, f::BroadcastingMethodChainLink{ex, F}) where {ex, F} = print(i
 struct BroadcastingMethodMultiChainLink{ex, F}<:AbstractBroadcastingMethodChainLink f::F end
 BroadcastingMethodMultiChainLink{ex}(f::F) where {ex, F} = BroadcastingMethodMultiChainLink{ex, F}(f)
 BroadcastingMethodMultiChainLink(f) = BroadcastingMethodMultiChainLink{nameof(f)}(f)
-(f::BroadcastingMethodMultiChainLink)(args) = f.f(args...)
+(f::BroadcastingMethodMultiChainLink)(args) = f.f(args)
 Base.show(io::IO, f::BroadcastingMethodMultiChainLink{ex, F}) where {ex, F} = print(io, "$ex")
 
 #∘(f, g::AbstractMethodChain) = f ∘ g.f

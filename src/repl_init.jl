@@ -1,6 +1,9 @@
 using REPL
+"""
+`init_repl()`
 
-
+Initiates the REPL so that every line will have `@mc` applied.
+"""
 function init_repl()
 #    mode = get(ENV, "JULIA_METHOD_CHAIN", "auto")
 #    if mode == "auto"
@@ -9,7 +12,7 @@ function init_repl()
 #        else
 
     function _method_chains_first(ex)
-        Internals.method_chains!(ex)
+        Internals.method_chains(ex)
     end
 
 
