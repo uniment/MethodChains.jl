@@ -21,25 +21,25 @@ end
 function method_chains(ex)
     chain, type = get_chain(ex)
     if type == SINGLE_CHAIN
-        ex = :(let it=$(ex.args[1]); $(single_chain(chain).args...) end)  |> clean_blocks
-    elseif type == BROADCASTING_SINGLE_CHAIN
-        # stuff
+        ex = :(let it=$(ex.args[1]); $(single_chain(chain)...) end)  |> clean_blocks
     elseif type == SINGLE_CHAIN_LINK
         quotedex = Expr(:quote, Symbol("$ex"))
-        ex = :(it -> ($(single_chain(chain).args...))) |> clean_blocks
+        ex = :(it -> ($(single_chain(chain)...))) |> clean_blocks
         ex = :(MethodChainLink{$quotedex}($ex))
-    elseif type == BROADCASTING_SINGLE_CHAIN_LINK
-        quotedex = Expr(:quote, Symbol("$ex"))
-        ex = :(it -> broadcast(it -> ($(single_chain(chain).args...)), it)) |> clean_blocks
-        ex = :(BroadcastingMethodChainLink{$quotedex}($ex))
     elseif type == MULTI_CHAIN
-        ex = :(let it=$(ex.args[1]), them=(it,); $(multi_chain(chain).args...); them[1] end) |> clean_blocks
-    elseif type == BROADCASTING_MULTI_CHAIN
-        # stuff
+        ex = :(let it=$(ex.args[1]), them=(it,); $(multi_chain(chain)...); it end) |> clean_blocks
     elseif type == MULTI_CHAIN_LINK
         quotedex = Expr(:quote, Symbol("$ex"))
-        ex = :(it -> (them=(it,); $(multi_chain(chain).args...); them[1])) |> clean_blocks 
+        ex = :(it -> (them=(it,); $(multi_chain(chain)...); it)) |> clean_blocks 
         ex = :(MethodMultiChainLink{$quotedex}($ex))
+    elseif type == BROADCASTING_SINGLE_CHAIN
+        # stuff
+    elseif type == BROADCASTING_SINGLE_CHAIN_LINK
+        quotedex = Expr(:quote, Symbol("$ex"))
+        ex = :(it -> broadcast(it -> ($(single_chain(chain)...)), it)) |> clean_blocks
+        ex = :(BroadcastingMethodChainLink{$quotedex}($ex))
+    elseif type == BROADCASTING_MULTI_CHAIN
+        # stuff
     elseif type == BROADCASTING_MULTI_CHAIN_LINK
         # stuff
     end
@@ -70,24 +70,18 @@ function get_chain(ex)
     # x.{y} becomes x.:({y}) so we have to cut through that
     is_expr(ex, :.) && is_expr(ex.args[2], :quote) && is_expr(ex.args[2].args[1], :braces) &&
         return ex.args[2].args[1], SINGLE_CHAIN
-    #is_expr(ex, :.) && is_expr(ex.args[2], :quote) && is_expr(ex.args[2].args[1], :bracescat) && all(x->!is_expr(x, :row), ex.args[2].args[1].args) &&
-    #    return ex.args[2].args[1], SINGLE_CHAIN
     is_expr(ex, :.) && is_expr(ex.args[2], :quote) && is_expr(ex.args[2].args[1], :bracescat) &&
         return ex.args[2].args[1], MULTI_CHAIN
-
+    is_expr(ex, :braces) &&
+        return ex, SINGLE_CHAIN_LINK
+    is_expr(ex, :bracescat) &&
+        return ex, MULTI_CHAIN_LINK
     # Not implemented yet: Broadcasting. What's the best way to do it? Do I want to burn ' adjoint on it?
     #    return ..., BROADCASTING_SINGLE_CHAIN
     #    return ..., BROADCASTING_MULTI_CHAIN
-    #is_expr(ex, :quote) && is_expr(ex.args[1], :braces) &&
     #    return ..., BROADCASTING_SINGLE_CHAIN_LINK
-    #is_expr(ex, :quote) && is_expr(ex.args[1], :bracescat) &&
     #    return ..., BROADCASTING_MULTI_CHAIN_LINK
-    is_expr(ex, :braces) &&
-        return ex, SINGLE_CHAIN_LINK
-    #is_expr(ex, :bracescat) && all(x->!is_expr(x, :row), ex.args) &&
-    #    return ex, SINGLE_CHAIN_LINK
-    is_expr(ex, :bracescat) &&
-        return ex, MULTI_CHAIN_LINK
+
     nothing, NONCHAIN #𝓏𝓇
 end
 
@@ -97,30 +91,30 @@ is_expr(ex, head) = ex isa Expr && ex.head == head
 `single_chain(ex)``
 
 Take an expression whose arguments a chain will be constructed from, and return an expression where each argument is:
-1. If `:it` (or `:_`, not implemented), leave out
+1. If `:it` or `:_`, leave out
 2. If an assignment, leave as-is
 3. If an expression of `it` (and not in a nested chain), change to `it=...`
 4. If an assignment, a for loop, or while loop, execute and do not assign to `it`
 5. If a non-callable object, such as a tuple, generator, or comprehension, simply assign to `it`
 6. Otherwise, try to call it and assign to `it=`.
 """
-function single_chain(ex::Expr, is_nested_in_multichain = false)
-    out = Expr(:block)
+function single_chain(ex::Expr, (is_nested_in_multichain, setwhat) = (false, :it))
+    out = []
     for e ∈ ex.args
-        if e == :it #|| e == :_
+        if e == setwhat || e == :_
             continue
         elseif do_not_assign_it(e)
-            push!(out.args, e)
-            if e == last(ex.args) push!(out.args, :it) end
+            push!(out, e)
+            if e == last(ex.args) push!(out, setwhat) end
         elseif has(e, :it) || is_not_callable(e) || is_nested_in_multichain && has(e, :them)
-            push!(out.args, :(it = $e))
+            push!(out, :($setwhat = $e))
         elseif is_expr(e, :braces) || is_expr(e, :bracescat) # nested chains
-            push!(out.args, method_chains(Expr(:., :it, Expr(:quote, e))))
+            push!(out, method_chains(Expr(:., setwhat, Expr(:quote, e))))
         else
-            push!(out.args, :(it = $(Expr(:call, e, :it))))
+            push!(out, :(it = $(Expr(:call, e, setwhat))))
         end
     end
-    isempty(out.args) && push!(out.args, :it)
+    isempty(out) && push!(out, setwhat)
     out #𝓏𝓇
 end
 
@@ -145,7 +139,9 @@ is_not_callable(ex) = ex isa Expr && ex.head ∈ (:(=), :for, :while, :comprehen
 """
 `multi_chain(ex)`
 
-Creates parallel chains, which instantiate or collapse according to these rules:
+Creates parallel chains, which instantiate, collapse, and interact according to these rules:
+1. The first chain is a background chain. 
+
 1. If the next line has the same number of columns as the last, with no `them` slurps and no `...` splats, then append this line to all existing chains
 2. Collect all values from all chains into a tuple to take inventory, and then redistribute accordingly if:
     a. the next line has more or less chains than the last, or
@@ -163,7 +159,7 @@ Creates parallel chains, which instantiate or collapse according to these rules:
 
 """
 function multi_chain(ex)
-    out = Expr(:block)
+    out = []
     chains = Expr[]
     ex = Expr(:block, ex.args...)
     ex.args = filter(x->!(x isa LineNumberNode), ex.args) # unnecessary? maybe I'm paranoid?
@@ -181,7 +177,7 @@ function multi_chain(ex)
 
     chains = [Expr(:block, :(them[1]), e) for e ∈ ex.args[1].args]
     for (oldrow, newrow) ∈ zip(ex.args, [ex.args[2:end]; :(them[1])])
-        if !(do_take_inventory(oldrow, newrow)) # new row has same # of chains as old row, so just continue chains
+        if !(do_take_inventory(oldrow, newrow)) # new row has same # of chains as old row and no splats or `them`, so just continue chains
             for (chain, col) ∈ zip(chains, newrow.args)
                 push!(chain.args, col)
             end
@@ -191,12 +187,20 @@ function multi_chain(ex)
                 if is_expr(last(c.args), :...) c.args[end] = c.args[end].args[1] end
             end
             startvals = [first(c.args) for c ∈ chains]
-            single_chains = [single_chain(Expr(:block, c.args[2:end]...), true) for c ∈ chains]
-            chains = [clean_blocks(:(let it=$(sv); $(c.args...); end)) for (c,sv) ∈ zip(single_chains, startvals)]
-            chains = [sp ? Expr(:..., ex) : ex for (ex, sp) ∈ zip(chains, chainsplats)] # restore splats
-
-            push!(out.args, :(them = ($(chains...),)))
-#            push!(out.args, :(@assert length(them) ≥ $(get_row_width(newrow)) "insufficient args (or not lol)"))
+            if get_row_width(oldrow) > 1
+                single_chains = [single_chain(Expr(:block, c.args[2:end]...), (true, :it)) for c ∈ chains]
+                chains = [clean_blocks(:(let it=$(sv); $(c...); end)) for (c,sv) ∈ zip(single_chains, startvals)]
+                chains = [sp ? Expr(:..., ex) : ex for (ex, sp) ∈ zip(chains, chainsplats)] # restore splats
+                push!(out, :(them = ($(chains...),)))
+                push!(out, :(it=them[1]))
+            else # single chain case
+#                if chainsplats[1] chains[end] = :(them=($(chains[end])...,)); end
+                endchain = chains[1].args[end] 
+                chain = single_chain(Expr(:block, chains[1].args[2:end]...), (true, :it))
+                if chainsplats[1] chain[end] = :(them = ($endchain...,)) else push!(chain, :(them = (it,))) end
+                out = [out; chain]#; :(them=(it,))]
+            end
+#            push!(out, :(@assert length(them) ≥ $(get_row_width(newrow)) "insufficient args (or not lol)"))
 
             indices = [clamp(i, 1:(does_splat(oldrow) ? typemax(Int) : length(oldrow.args))) for i = 1:length(newrow.args)]    
             chains = [Expr(:block, :(them[$i]), e) for (i,e) ∈ zip(indices, newrow.args)]

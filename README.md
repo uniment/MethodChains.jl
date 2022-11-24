@@ -1,5 +1,9 @@
 # *MethodChains.jl*
 
+```julia
+α.{a}.{b}.{c}.{d}.{e}.{f}.{g}.{h}.{i}.{j}.{k}.{l}.{m}.{n}.{o}.{p}.{q}.{r}.{s}.{t}.{u}.{v}.{w}.{x}.{y}.{z}
+```
+
 ## Welcome!
 
 This is an ambitious (and somewhat experimental, and fun!) approach to generalize method chaining and function composition.
@@ -9,7 +13,7 @@ To install:
 ] add https://github.com/uniment/MethodChains.jl
 ```
 and
-```
+```julia
 using MethodChains
 ```
 
@@ -28,14 +32,14 @@ or you can invoke it on an entire block of expressions:
 end
 ```
 
-To make it execute on every line in the REPL, execute this:
+To make it execute on every line in the REPL, run this at startup:
 ```julia
 MethodChains.init_repl()
 ```
 
 Then, you won't have to worry about typing `@mc` every time. 🤩
 
-Definitely do not add this to your Julia startup.jl file if you don't like having fun:
+Definitely do not add this to your startup.jl file if you don't like having fun:
 
 ```julia
 using MethodChains
@@ -77,7 +81,7 @@ y = x.{m}
 y = m(x)
 ```
 
-You can also construct one and immediately call it, but that's not really necessary:
+You can also construct one and immediately call it, but that's not really necessary (and takes greater compile time than suffix position):
 ```julia
 y = {f, g, h}(x)
 ```
@@ -132,13 +136,13 @@ julia> "1,2,3".{split(it,","), parse.(Int, it), it.^2, join(it, ",")}
 Now, the rule for whether to *call* the expression, or leave it intact, or assign `it` to it, is actually a bit more complicated (but reasonably natural). Check this out:
 
 ```julia
-julia> avg = {len=length(it), sum(it)/len}
+julia> const avg = {len=length(it), sum(it)/len}
 {len = length(it), sum(it) / len}
 
 julia> (1,2,3).{avg}
 2.0
 
-julia> stdev = {μ = it.{avg}, it .- μ, it.^2, avg, sqrt};
+julia> const stdev = {μ = it.{avg}, it .- μ, it.^2, avg, sqrt};
 
 julia> (1,2,3).{stdev}
 0.816496580927726
@@ -153,7 +157,7 @@ Dict{Symbol, Int64} with 3 entries:
 Namely:
 
 * If an expression is an assignment, leave it intact and do not assign `it` to it. This allows local variables to be assigned.
-* If an expression type returns nothing, such as a `for` loop, then it is executed but its result is not assigned to `it`.
+* If an expression type returns nothing, such as a `for` or `while` loop, then it is executed but its result is not assigned to `it`.
 * If an expression is known not to be a callable type, such as a comprehension, generator, tuple, or vector, then it is not called and is simply assigned to `it`.
 * If an expression is an expression of `it`, then it is simply executed and assigned to `it`.
 * Otherwise, it's assumed that the expression is callable, and so it should be called. This is the default behavior.
@@ -169,7 +173,7 @@ df.{
     dropmissing
     filter(:id => >(6), it)
     groupby(it, :group)
-    _ = println(it) # show intermediate value, discard return value
+    _=println(it) # show intermediate value, discard return value
     combine(it, :age => sum)
 }
 ```
@@ -178,7 +182,7 @@ df.{
 
 ```julia
 julia> "a=1 b=2 c=3".{
-           split,
+           split
            map({
                split(it, "=")
                (Symbol(it[1]) => parse(Int, it[2]))
@@ -203,6 +207,7 @@ a.{b(it[3])}
 [1,2,3].{join(it, ", ")}
 "1".{parse(Int, it)} == 1
 (:a,:b).{reverse}
+(a=1,b=2,c=3).{(a, b, c) = it, it=(a=a^2, b=b^2, c=c^2)}
 ```
 
 
@@ -259,9 +264,9 @@ process_bags.{into(airplane, it, pallets)}
 
 # *Advanced Use*
 
-That was fun! This chaining syntax allows for really basic composition, like `x.{f, g, h}`, but also some more advanced stuff too like `x.{i for i ∈ 1:it}`. Why would you use this instead of a function? Because on every line you're presumed *most likely* to call a function on or otherwise manipulate the object `it`, this default behavior frequently enables very short expressions. It also hints to the IDE autocomplete what type of object you're likely about to call a function on, as well as providing a natural "flow" of thought as the object passes through a sequence of transformations. Finally, calling the chain immediately (e.g. `x.{exprs}`) doesn't allocate a function, keeping compile time minimized, while still being a shorthand for creating locally-scoped variables.
+That was fun! This chaining syntax allows for really basic composition, like `x.{f, g, h}`, but also some more advanced stuff too like `x.{f, it.a, g}` or `x.{i for i ∈ 1:it}`. Why would you use this instead of a function? Because on every line you're presumed *most likely* to call a function on, or otherwise manipulate, the object `it`, this default behavior frequently enables very concise expressions. It also hints to the IDE autocomplete what type of object you're likely about to call a function on, as well as providing a natural "flow" of thought as the object passes through a sequence of transformations. Finally, calling the chain immediately (e.g. `x.{expr1, expr2, ...}`) doesn't allocate a function, which keeps compile time minimized, while still being a shorthand for creating locally-scoped variables.
 
-But there's even more to it. (This is the most experimental feature of this syntax, so please experiment with it and offer feedback!)
+But there's even more to it. (This is the *really* experimental feature of this syntax, so please play with it and offer feedback!)
 
 ## 2-dimensional chains
 
@@ -271,7 +276,7 @@ So far we've discussed one-dimensional chains, wherein a single object undergoes
 Take this for example:
 
 ```julia
-(1, 2, 3).{
+(a, b, c).{
     it...
     f       g       h
     g       h       f
@@ -280,21 +285,25 @@ Take this for example:
     them
 }
 ```
-The result of this chain is equivalent to `(h(g(f(1)))+3, f(h(g(2)))*2, g(f(h(3)))+1)`. Notice that the expression represents three chains; the three input elements have been splatted across the top row, and the values waterfall down to the bottom where they are collected into a tuple. The pronoun `it` is, again, local to each chain, and the pronoun `them` slurps up all unclaimed adjacent `it`s into a tuple.
+The result of this chain is equivalent to `(h(g(f(a)))+3, f(h(g(b)))*2, g(f(h(c)))+1)`. Notice that the expression represents three chains; the three input elements have been splatted across the top row, and the values waterfall down to the bottom where they are collected into a tuple. The pronoun `it` is, again, local to each chain, and the pronoun `them`, whenever it appears, collects all `it`s into a tuple. For example:
 
 ```julia
-(1+1im).{
+(2-2im).{
     real        imag
     it^2        it^2
     Complex(them...)
 }
 ```
 
-Here, the input was not splatted across the top row. When the next row has more elements than the last, and the last did not splat, then the last element of the row above is copied in. Notice that after the chains, the two chains came together and interacted.
+Here, the input was not splatted across the top row. When the next row has more elements than the last, and the last did not splat, then the last element of the row above is copied across. Notice that after the chains, the two chains came together and interacted.
+
+> Question for the reader: Is copying the *last* value across the preferred behavior? Or perhaps, would copying the sequence, e.g.:
+>
+> Suppose the last line had `1 2 3`, and the next line has `it it it it it it`. Current behavior would copy across `1 2 3 3 3 3`. But maybe it would be better to copy across `1 2 3 1 2 3`? Behavior is not fixed, and feedback is welcome.
 
 It is presumed that each line will have the same number of expressions as the one above it. But if it doesn't, or if there is any splat on the previous line, or if there's any expression of `them` on the next line, then all the individual chains terminate, their values are collected into `them`, and new chains commence.
 
-Values can also be discarded, which causes their respective chains to end with them:
+Values can also be discarded, which causes their respective chains to end as well:
 
 ```julia
 (a, b, c).{
@@ -333,6 +342,77 @@ New chains can also be instantiated with an assignment to `it`. Previous values 
 
 The return value here is `(1, 2, 3)`.
 
+## Going Deeper
+
+Let's discuss how it works, so you really understand what's going on.
+
+When you create a multi-chain (a method chain with multiple columns), first a "background chain" is started. The background chain has two local keywords defined, `it` and `them`. The keyword `it` acts just as before. The keyword `them` has interesting behavior, which we'll see in a bit. Like expressions of `it`, expressions of `them` are not called, and are instead assigned to `it`. As with 1-D chains, any variables defined in a 2-D chain are local to that chain.
+
+When a row with more than one column starts, subchains begin (and execution of the background chain is paused). Any local variables in the background chain are accessible to the subchains, except that of course each sub-chain has its own local `it` defined.
+
+When sub-chains begin, they take their local `it` values as the elements of the background chain's collection `them`. Nominally, `them` is just a tuple `them=(it,)`. When new subchains exceed the length of `them`, then `last(them)` is copied across into the new chains' `it` values.
+
+When multiple chains exist, then `them` becomes a tuple of the chains' values. Also, if a value is splatted into a row, `them` slurps up those values.
+
+For any row where the number of columns changes, where an object is splatted across a row, or where `them` is accessed, all subchains are halted (destroying any locally-defined variables) and an inventory is taken of all the chains' local `it` values, which are collected into `them`. 
+
+One non-intuitive consequence of this behavior is that, if you have a multi-chain where all you do is access `them` repeatedly (which, you'll remember, causes an assignment `it=them`), you just get a deeper and deeper nested tuple.
+
+```julia
+julia> (1,2,3).{them; them; them}
+((((1, 2, 3),),),)
+```
+
+But that's okay! That's exactly how it should operate.
+
+As before, if you're not sure how a multi-chain will operate, run `@macroexpand @mc ...`. Let's see if you think its behavior is as intuitive and unambiguous as I think it is.
+
+## Examples
+
+*Standard Deviation, Variance, and Maximum Absolute Deviation*
+
+```julia
+julia> (0:10...,).{
+           avg = {len=length(it), sum(it)/len}
+           μ = it.{avg}
+           it .- μ
+
+         # stdev     var      mad
+           it.^2     it.^2    abs.(it)
+           avg       avg      maximum
+           sqrt      _        _
+           them
+       }
+(3.1622776601683795, 10.0, 5.0)
+```
+
+Notice that `_` is used as a continuation of the chain on the last line. `it` can also be used for this. 
+
+> This behavior for `_` is experimental and not guaranteed for the future (pending a more final decision on the character's use in the language). Would've been perfect if I could use `⋮`, but it's defined to be an operator so I can't.
+
+To inspect the intermediate values mid-chain:
+
+```julia
+julia> (0:10...,).{
+           avg = {len=length(it), sum(it)/len}
+           μ = it.{avg}
+           it .- μ
+
+         # stdev   var     mad
+           it.^2   it.^2   abs.(it); _=println(them)
+           avg     avg     maximum
+           sqrt    _       _
+           them
+       }
+(3.1622776601683795, 10.0, 5.0)
+```
+
+
+*FFT Butterfly*
+
+Example is a WIP
+
+
 
 # Performance Considerations
 
@@ -361,3 +441,36 @@ julia> @btime (1).{chain_const}
 ```
 
 Namely, when `chain` isn't a `const`, its type is not known at runtime so it must be boxed, and its return value is also unknown so that too must be boxed. 
+
+When performing benchmarks, be careful to ensure the correct things are being measured. For example, let's try this:
+
+```julia
+julia> @btime [1,2].{it./2}
+  70.329 ns (2 allocations: 160 bytes)
+2-element Vector{Float64}:
+ 0.5
+ 1.0
+
+julia> x = [1,2];
+
+julia> @btime $x./2
+  41.515 ns (1 allocation: 80 bytes)
+2-element Vector{Float64}:
+ 0.5
+ 1.0
+```
+
+From this test, it appears that the method chain has caused extra runtime and an extra allocation. However, this is just an artifact of the measurement technique, as you can confirm:
+```julia
+julia> @btime [1,2]./2
+  72.181 ns (2 allocations: 160 bytes)
+2-element Vector{Float64}:
+ 0.5
+ 1.0
+
+ julia> @btime $x.{it./2}
+  41.446 ns (1 allocation: 80 bytes)
+2-element Vector{Float64}:
+ 0.5
+ 1.0
+```
