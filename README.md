@@ -1,4 +1,4 @@
-# MethodChains.jl
+# *MethodChains.jl*
 
 ## *Welcome!*
 
@@ -82,7 +82,7 @@ You can also construct one and immediately call it, but that's not really necess
 y = {f, g, h}(x)
 ```
 
-Now, unless every function is a Clojure-style transducer, chances are that your functions won't compose perfectly like this. This situation happens in real life too---and to handle this, in the English language we reserve the pronoun "it," to give the object a local and temporary name to allow short (but flexible) manipulations spliced between larger functions. So, `MethodChains` also uses `it`.
+Now, unless every function is a Clojure-style transducer, chances are that your functions won't compose perfectly like this. This situation happens in real life too—and to handle this, in the English language we reserve the pronoun "it," to give the object a local and temporary name to allow short (but flexible) manipulations spliced between larger functions. So, `MethodChains` also uses `it`.
 
 ```julia
 julia> x = 2;
@@ -102,7 +102,6 @@ julia> @macroexpand @mc x.{f, √(it - 1), g}
       it = f(it)
       it = √(it - 1)
       it = g(it)
-      it
   end)
 ```
 
@@ -161,17 +160,17 @@ Namely:
 
 If it's desired to override the default behavior of method calling, you can make an explicit assignment to `it`.
 
-## Examples
+## *Examples*
 
 *Example from Chain.jl Readme*
 
 ```julia
 df.{
-    dropmissing,
-    filter(:id => >(6), it),
-    groupby(it, :group),
-    _ = println(it), # show intermediate value, discard return value
-    combine(it, :age => sum),
+    dropmissing
+    filter(:id => >(6), it)
+    groupby(it, :group)
+    _ = println(it) # show intermediate value, discard return value
+    combine(it, :age => sum)
 }
 ```
 
@@ -181,10 +180,10 @@ df.{
 julia> "a=1 b=2 c=3".{
            split,
            map({
-               split(it, "="),
-               (Symbol(it[1]) => parse(Int, it[2])),
-           }, it),
-           NamedTuple,
+               split(it, "=")
+               (Symbol(it[1]) => parse(Int, it[2]))
+           }, it)
+           NamedTuple
        }
 (a = 1, b = 2, c = 3)
 ```
@@ -229,8 +228,8 @@ julia> [1,2,3].{
 
 ```julia
 julia> "1 2, 3; hehe4".{
-           eachmatch(r"(\d+)", it),
-           {first, parse(Int, it)}.(it),
+           eachmatch(r"(\d+)", it)
+           map({first, parse(Int, it)}, it)
            join(it, ", ")
        }
 "1, 2, 3, 4"
@@ -251,38 +250,55 @@ julia> "1, 2, 3, 4".{chain}
 
 ```julia
 process_bags = {
-    mapcatting(unbundle_pallet),
-    filtering(is_nonfood),
+    mapcatting(unbundle_pallet)
+    filtering(is_nonfood)
     mapping(label_heavy)
 }
 process_bags.{into(airplane, it, pallets)}
 ```
 
-# Advanced Use
+# *Advanced Use*
+
+This is still a work in progress; ignore the following for now, and check back later.
+---
 
 That was fun! This chaining syntax allows for really basic composition, like `x.{f, g, h}`, but also some more advanced stuff too like `x.{i for i ∈ 1:it}`. Why would you use this instead of a function? Because on every line you're presumed *most likely* to call a function on or otherwise manipulate the object `it`, this default behavior frequently enables very short expressions. It also hints to the IDE autocomplete what type of object you're likely about to call a function on, as well as providing a natural "flow" of thought as the object passes through a sequence of transformations. Finally, calling the chain immediately (e.g. `x.{exprs}`) doesn't allocate a function, keeping compile time minimized, while still being a shorthand for creating locally-scoped variables.
 
 But there's even more to it. (This is the most experimental feature of this syntax, so please experiment with it and offer feedback!)
 
-## 2-dimensional chains
+## *2-dimensional chains*
 
-So far we've discussed a one-dimensional chain, wherein a single object is the "star of the show" and undergoes a sequence of transformations in time. However, we can also express two-dimensional chains, wherein multiple objects spread across space undergo their own transformation chains, and occasionally interact, through time. 
+This is still a work in progress.
+---
+
+So far we've discussed one-dimensional chains, wherein a single object is the "star of the show" and undergoes a sequence of transformations in time. However, we can also express two-dimensional chains, wherein multiple objects spread across space undergo their own transformation chains, and occasionally interact, through time. 
 
 Take this for example:
 
 ```julia
 (1, 2, 3).{
+    it...
     f       g       h
     g       h       f
     h       f       g
     it+3    it*2    it+1    
+    them
 }
 ```
-The result of this chain is equivalent to `(h(g(f(1)))+3, f(h(g(2)))*2, g(f(h(3)))+1)`. Notice that the expression represents three chains; the three input elements have been splatted across the top row, and the values waterfall down to the bottom where they are collected into a tuple. The keyword `it` is, again, local to each chain.
+The result of this chain is equivalent to `(h(g(f(1)))+3, f(h(g(2)))*2, g(f(h(3)))+1)`. Notice that the expression represents three chains; the three input elements have been splatted across the top row, and the values waterfall down to the bottom where they are collected into a tuple. The pronoun `it` is, again, local to each chain, and the pronoun `them` slurps up all unclaimed adjacent `it`s into a tuple.
+
+(1+1im).{
+    real(it)    imag(it)
+    it^2        it^2
+    Complex(them)
+}
+
+Here, the input was not splatted across the top row. When the next row has more elements than the last, and the last did not splat, then the last element of the row above is copied in.
 
 You can also have interactions:
 ```julia
 (a, b, c).{
+    it...
     it      it+1    it+2
     f(them...)      it
     g(them...)
@@ -291,37 +307,16 @@ You can also have interactions:
 
 The result of this chain is `g(f(a, b+1), c+2)`.
 
-This is equivalent to 
-```
-let them=(
-let them=(
-let it=a
-it=it
-end,
-
-let it=b
-it=it+1
-end)
-it=f(them...)
-end,
-
-let it=let it=c
-it=it+2
-end
-it=it
-end)
-it=g(them...)
-end
-```
-
-It is presumed that each line will have the same number of expressions as the one above it. However, if it has less, then unclaimed adjacent `it`s are slurped into a tuple `them`. Note that individual chains end when they are slurped, and any local variables associated with them are discarded.
+It is presumed that each line will have the same number of expressions as the one above it. However, if it has less, then unclaimed adjacent `it`s are slurped into a tuple `them` (if present). Note that individual chains end when they are slurped, and any local variables associated with them are discarded.
 
 Values can also be discarded, which causes their respective chains to end with them:
 
 ```julia
 (a, b, c).{
+    it...
     it      it      it
     it
+    them
 }
 ```
 
@@ -356,7 +351,7 @@ When defining a chainlink, e.g.
 
 `chain = {f, g, h}`,
 
-a function is created, and on its first run with a particular type it will be compiled (whether called by `x.{chain}` or by `chain(x)`). In contrast, when calling `x.{f, g, h}` directly, no function is created or compiled so evaluation occurs at maximum possible speed.
+a function is created, and on its first run with a particular type it will be compiled (whether called by `x.{chain}` or by `chain(x)`). In contrast, when calling `x.{f, g, h}` directly, no function is created or compiled, so evaluation occurs at maximum possible speed.
 
 If it's necessary to save a `chain`, it's recommended to set it to a constant value `const`. This is to avoid type-instability, which causes slower runtime:
 
@@ -376,4 +371,4 @@ julia> @btime (1).{chain_const}
 2
 ```
 
-Namely, when `chain` isn't a `const`, its type is not known at runtime so it must be boxed, and its return value is also unknown so that too must be boxed.
+Namely, when `chain` isn't a `const`, its type is not known at runtime so it must be boxed, and its return value is also unknown so that too must be boxed. 
