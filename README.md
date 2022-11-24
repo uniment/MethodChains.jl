@@ -32,7 +32,7 @@ or you can invoke it on an entire block of expressions:
 end
 ```
 
-To make it execute on every line in the REPL, run this at startup:
+To make it execute on every line in the REPL, run this:
 ```julia
 MethodChains.init_repl()
 ```
@@ -81,7 +81,7 @@ y = x.{m}
 y = m(x)
 ```
 
-You can also construct one and immediately call it, but that's not really necessary (and takes greater compile time than suffix position):
+You can also construct one and immediately call it, but that's not really necessary (and takes greater compile time than the suffix position):
 ```julia
 y = {f, g, h}(x)
 ```
@@ -121,6 +121,13 @@ julia> @macroexpand @mc {f, √(it - 1), g}
 
 Pretty simple, neh? `it` is a keyword *defined only locally inside the chain*, and on every step it takes on a new value. If an expression has `it` in it, then it's simply executed and the result overwrites `it`; otherwise it's assumed that it's a function, which is called on `it`.
 
+These two do the same thing:
+
+```julia
+map({it^2}, 1:10)
+(1:10).{map({it^2}, it)}
+```
+
 Couple more examples:
 ```julia
 julia> (1,2,5).{(first(it):last(it)...,)}
@@ -129,11 +136,11 @@ julia> (1,2,5).{(first(it):last(it)...,)}
 julia> (1,2,3).{it.^2, sum, sqrt}
 3.7416573867739413
 
-julia> "1,2,3".{split(it,","), parse.(Int, it), it.^2, join(it, ",")}
+julia> "1,2,3".{split(it,","), parse.(Int,it), it.^2, join(it,",")}
 "1,4,9"
 ```
 
-Now, the rule for whether to *call* the expression, or leave it intact, or assign `it` to it, is actually a bit more complicated (but reasonably natural). Check this out:
+Now, the rule for whether to *call* the expression, or leave it intact, or assign `it` to it, is actually a bit more complicated (but pretty natural and straightforward). Check it out:
 
 ```julia
 julia> const avg = {len=length(it), sum(it)/len}
@@ -142,7 +149,7 @@ julia> const avg = {len=length(it), sum(it)/len}
 julia> (1,2,3).{avg}
 2.0
 
-julia> const stdev = {μ = it.{avg}, it .- μ, it.^2, avg, sqrt};
+julia> const stdev = {μ = it.{avg}, it.-μ, it.^2, avg, sqrt};
 
 julia> (1,2,3).{stdev}
 0.816496580927726
@@ -154,13 +161,13 @@ Dict{Symbol, Int64} with 3 entries:
   :c => 9
 ```
 
-Namely:
+Namely, regarding expressions inside the curly braces:
 
 * If an expression is an assignment, leave it intact and do not assign `it` to it. This allows local variables to be assigned.
-* If an expression type returns nothing, such as a `for` or `while` loop, then it is executed but its result is not assigned to `it`.
-* If an expression is known not to be a callable type, such as a comprehension, generator, tuple, or vector, then it is not called and is simply assigned to `it`.
+* If an expression type returns nothing, such as a `for` or `while` loop, then it is executed but its result is not assigned to `it`. (Note: this does *not* apply to function calls, such as `println`.)
+* If an expression is a non-callable type, such as a comprehension, generator, tuple, or vector, then it is not called and is simply assigned to `it`.
 * If an expression is an expression of `it`, then it is simply executed and assigned to `it`.
-* Otherwise, it's assumed that the expression is callable, and so it should be called. This is the default behavior.
+* Otherwise, it's assumed that the expression is callable, and so it should be called on `it`. This is the default behavior.
 
 If it's desired to override the default behavior of method calling, you can make an explicit assignment to `it`.
 
@@ -206,14 +213,16 @@ a.{b(it[3])}
 [1,2,3].{map({it^2}, it)}
 [1,2,3].{join(it, ", ")}
 "1".{parse(Int, it)} == 1
-(:a,:b).{reverse}
-(a=1,b=2,c=3).{(a, b, c) = it, it=(a=a^2, b=b^2, c=c^2)}
+(1,2).{(a,b)=it, (;b,a)}
 ```
 
 
 *Operator Precedence*
 ```julia
-julia> (1, 2).{(a=it[1], b=it[2])}.b
+julia> (1,2).{(a,b)=it,(;b,a)}.b
+2
+
+julia> (1,2).{(a,b)=it,(;b,a)}[1]
 2
 ```
 
