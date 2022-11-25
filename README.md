@@ -39,6 +39,8 @@ MethodChains.init_repl()
 
 Then, you won't have to worry about typing `@mc` every time. 🤩
 
+Unfortunately it only seems to work for the REPL; VSCode and IJulia seems to be having trouble at the moment. (It works in the REPL in VSCode, but not for SHIFT+ENTER or CTRL+ENTER.) For these examples, it's recommended to use the REPL.
+
 Definitely do not add this to your startup.jl file if you don't like having fun:
 
 ```julia
@@ -140,7 +142,7 @@ julia> "1,2,3".{split(it,","), parse.(Int,it), it.^2, join(it,",")}
 "1,4,9"
 ```
 
-Now, the rule for whether to *call* the expression, or leave it intact, or assign `it` to it, is actually a bit more complicated (but pretty natural and straightforward). Check it out:
+Now, the rule for whether to *call* the expression, or to leave it intact, or to assign `it` to it, is actually a bit more complicated (but pretty natural and straightforward). Check it out:
 
 ```julia
 julia> const avg = {len=length(it), sum(it)/len}
@@ -161,6 +163,8 @@ Dict{Symbol, Int64} with 3 entries:
   :c => 9
 ```
 
+(Note that expressions can be separated by commas or by semicolons.)
+
 Namely, regarding expressions inside the curly braces:
 
 * If an expression is an assignment, leave it intact and do not assign `it` to it. This allows local variables to be assigned.
@@ -180,7 +184,7 @@ df.{
     dropmissing
     filter(:id => >(6), it)
     groupby(it, :group)
-    _=println(it) # show intermediate value, discard return value
+    (println(it); it) # show intermediate value, discard return value
     combine(it, :age => sum)
 }
 ```
@@ -282,6 +286,8 @@ But there's even more to it. (This is the *really* experimental feature of this 
 
 So far we've discussed one-dimensional chains, wherein a single object undergoes a sequence of transformations in time. However, we can also express two-dimensional chains, wherein multiple objects spread across space undergo their own transformation chains, and occasionally interact, through time. 
 
+The syntax is similar to that for vector and matrix building. Semicolons or newlines separate rows, and horizontal whitespace separates expressions within a row. When newlines delimit rows, semicolons are optional.
+
 Take this for example:
 
 ```julia
@@ -294,7 +300,7 @@ Take this for example:
     them
 }
 ```
-The result of this chain is equivalent to `(h(g(f(a)))+3, f(h(g(b)))*2, g(f(h(c)))+1)`. Notice that the expression represents three chains; the three input elements have been splatted across the top row, and the values waterfall down to the bottom where they are collected into a tuple. The pronoun `it` is, again, local to each chain, and the pronoun `them`, whenever it appears, collects all `it`s into a tuple. For example:
+The result of this chain is equivalent to `(h(g(f(a)))+3, f(h(g(b)))*2, g(f(h(c)))+1)`. Notice that the expression represents three chains; the three input elements have been splatted across the top row, and the values waterfall down to the bottom where they are collected into a tuple. The pronoun `it` is, again, local to each chain, and the pronoun `them`, whenever it appears, collects all `it`s into a tuple. Another example:
 
 ```julia
 (2-2im).{
@@ -304,7 +310,7 @@ The result of this chain is equivalent to `(h(g(f(a)))+3, f(h(g(b)))*2, g(f(h(c)
 }
 ```
 
-Here, the input was not splatted across the top row. When the next row has more elements than the last, and the last did not splat, then the last element of the row above is copied across. Notice that after the chains, the two chains came together and interacted.
+Here, the input was \*not\* splatted across the top row. When the next row has more elements than the last, and the last did not splat, then the last element of the row above is copied across. Notice that after the chains, the two chains came together and interacted.
 
 > Question for the reader: Is copying the *last* value across the preferred behavior? Or perhaps, would copying the sequence, e.g.:
 >
@@ -324,6 +330,8 @@ Values can also be discarded, which causes their respective chains to end as wel
 ```
 
 In this case, the return value is a simple tuple `(a,)`. Values drop off the right side.
+
+> Question for the reader: Is dropping the *rightmost* values the preferred behavior? Or should we drop the left?
 
 Values can also be duplicated, starting new chains:
 ```julia
@@ -345,11 +353,17 @@ New chains can also be instantiated with an assignment to `it`. Previous values 
     it...
     it      (it, it+1)...
     it      it              it
+    them[2:3]...
+    it      it
     them
 }
 ```
 
-The return value here is `(1, 2, 3)`.
+The return value here is `(2, 3)`.
+
+It's a little funky to be playing around with expressions of just `it` and `them`, but it's instructive (and weirdly therapeutic) so try it!
+
+Fun question: On the line with two `it`s after `them[2:3]...`, what happens if you add another `it`? 😏
 
 ## Going Deeper
 
@@ -382,7 +396,7 @@ As before, if you're not sure how a multi-chain will operate, run `@macroexpand 
 
 ```julia
 julia> (0:10...,).{
-           avg = {len=length(it), sum(it)/len}
+           avg = {len=it.{length}, sum(it)/len}
            μ = it.{avg}
            it .- μ
 
@@ -395,22 +409,24 @@ julia> (0:10...,).{
 (3.1622776601683795, 10.0, 5.0)
 ```
 
-Notice that `_` is used as a continuation of the chain on the last line. `it` can also be used for this. 
+Notice that `_` is used as a continuation of the chain on the last line. `it` can also be used. 
 
 > This behavior for `_` is experimental and not guaranteed for the future (pending a more final decision on the character's use in the language). Would've been perfect if I could use `⋮`, but it's defined to be an operator so I can't.
+
+Note that if it's desired to make a chain shorter (e.g., because one chain is much longer than its adjacent chains), you can package several operations together inside `{}`. Within the context of a chain, it's syntax transformed away so a function needn't be declared.
 
 To inspect the intermediate values mid-chain:
 
 ```julia
 julia> (0:10...,).{
-           avg = {len=length(it), sum(it)/len}
-           μ = it.{avg}
-           it .- μ
+           avg = {len=it.{length}; sum(it)/len}
+           μ = it.{avg}             ; (println(μ); it)
+           it .- μ                  ; (println(it); it)
 
          # stdev   var     mad
-           it.^2   it.^2   abs.(it); _=println(them)
-           avg     avg     maximum
-           sqrt    _       _
+           it.^2   it.^2   abs.(it) ; (println(them); them)...
+           avg     avg     maximum  ; (println(them); them)...
+           sqrt    _       _        ; (println(them); them)...
            them
        }
 (3.1622776601683795, 10.0, 5.0)
@@ -420,6 +436,23 @@ julia> (0:10...,).{
 *FFT Butterfly*
 
 Example is a WIP
+
+```julia
+(2,2,0,2).{
+    (x₁,x₂,k,N) = it
+    W = exp(-2π*im/N)
+
+        it=x₁             it=x₂
+        _                 it*W^k
+#       ⋮      ⋱       ⋰     ⋮
+#       ⋮          x         ⋮
+#       ⋮      ⋰       ⋱     ⋮
+            (x₁′,x₂′)=them
+        [x₁′+x₂′   ,      x₁′-x₂′]
+}
+
+
+```
 
 
 
@@ -469,7 +502,7 @@ julia> @btime $x./2
  1.0
 ```
 
-From this test, it appears that the method chain has caused extra runtime and an extra allocation. However, this is just an artifact of the measurement technique, as you can confirm:
+From this test, it appears that the method chain has caused extra runtime and an extra allocation. However, this is just an artifact of the measurement technique, as you can easily confirm:
 ```julia
 julia> @btime [1,2]./2
   72.181 ns (2 allocations: 160 bytes)
@@ -483,3 +516,25 @@ julia> @btime [1,2]./2
  0.5
  1.0
 ```
+
+# *Errata*
+
+1. I don't have multi-threading implemented yet.
+2. Inserting 
+
+It might also be nice to write macros to make it easier to call `println`. Maybe `@printit` and `@printthem`?
+
+This works for `@printit`:
+```julia
+macro printit()
+    esc(:((println(it); it)))
+end
+```
+
+but `@printthem` is going to take more thinking.
+
+Up for debate: instead of `it` and `them`, use `me` and `us`? 🤔
+
+To add: subchain splatting (so that long rows can be made by splatting in vertically arranged expressions)?
+
+Adjoint?

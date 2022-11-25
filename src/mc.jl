@@ -106,7 +106,7 @@ function single_chain(ex::Expr, (is_nested_in_multichain, setwhat) = (false, :it
         elseif do_not_assign_it(e)
             push!(out, e)
             if e == last(ex.args) push!(out, setwhat) end
-        elseif has(e, :it) || is_not_callable(e) || is_nested_in_multichain && has(e, :them)
+        elseif has(e, :it) || do_not_call(e) || is_nested_in_multichain && has(e, :them)
             push!(out, :($setwhat = $e))
         elseif is_expr(e, :braces) || is_expr(e, :bracescat) # nested chains
             push!(out, method_chains(Expr(:., setwhat, Expr(:quote, e))))
@@ -131,8 +131,9 @@ function has(ex, s=:it) # true if ex is an expression of "it", and it isn't cont
 end
 
 do_not_assign_it(ex) = ex isa Expr && (ex.head ∈ (:(=), :for, :while)  )#|| ex.head == :tuple && is_expr(last(ex.args), :(=))) # this is for a,b=it; doesn't work, must parenthesize (a,b) anyway 
-is_not_callable(ex) = ex isa Expr && ex.head ∈ (:(=), :for, :while, :comprehension, :generator, :tuple, :vect, :vcat, :ncat, :quote) || 
-    !(ex isa Expr) && !(ex isa Symbol)
+is_not_callable(ex) = ex isa Expr && ex.head ∈ (:(=), :for, :while, :comprehension, :generator, :tuple, :vect, :vcat, :ncat, :quote, :macrocall) || 
+    !(ex isa Expr) && !(ex isa Symbol) 
+do_not_call(ex) = is_not_callable(ex) || (ex isa Expr && ex.head == :(::) && is_not_callable(ex.args[1]))
     #ex isa Number || ex isa QuoteNode || ex isa Char || ex isa String || ex isa Bool
 # did I miss any?
 
@@ -158,7 +159,7 @@ Creates parallel chains, which instantiate, collapse, and interact according to 
     - if the next line has `them`, then any unclaimed chains are slurped into it
 
 """
-function multi_chain(ex)
+function multi_chain(ex) # this is somewhat messy
     out = []
     chains = Expr[]
     ex = Expr(:block, ex.args...)
@@ -194,18 +195,18 @@ function multi_chain(ex)
                 push!(out, :(them = ($(chains...),)))
                 push!(out, :(it=them[1]))
             else # single chain case
-#                if chainsplats[1] chains[end] = :(them=($(chains[end])...,)); end
                 endchain = chains[1].args[end] 
                 chain = single_chain(Expr(:block, chains[1].args[2:end]...), (true, :it))
-                if chainsplats[1] chain[end] = :(them = ($endchain...,)) else push!(chain, :(them = (it,))) end
-                out = [out; chain]#; :(them=(it,))]
+                if chainsplats[1] chain[end] = :(them = ($endchain...,)) 
+                else push!(chain, :(them = (it,))) end
+                out = [out; chain]
             end
 #            push!(out, :(@assert length(them) ≥ $(get_row_width(newrow)) "insufficient args (or not lol)"))
-
             indices = [clamp(i, 1:(does_splat(oldrow) ? typemax(Int) : length(oldrow.args))) for i = 1:length(newrow.args)]    
             chains = [Expr(:block, :(them[$i]), e) for (i,e) ∈ zip(indices, newrow.args)]
         end
     end
+    out = out[begin:end-1] # truncate last `them=(it,)` statement
     out
 end
 
