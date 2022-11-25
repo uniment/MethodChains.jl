@@ -435,25 +435,24 @@ julia> (0:10...,).{
 
 *FFT Butterfly*
 
-Example is a WIP
-
 ```julia
-(2,2,0,2).{
-    (x₁,x₂,k,N) = it
-    W = exp(-2π*im/N)
-
-        it=x₁             it=x₂
-        _                 it*W^k
-#       ⋮      ⋱       ⋰     ⋮
-#       ⋮          x         ⋮
-#       ⋮      ⋰       ⋱     ⋮
-            (x₁′,x₂′)=them
-        [x₁′+x₂′   ,      x₁′-x₂′]
+@mc const fun_fft = {
+    # setup
+    Vector{ComplexF64}
+    n = it.{length}
+    n == 2 && (return [it[1]+it[2]; it[1]-it[2]]) || it
+    W = exp(-2π*im/n)
+    # butterfly
+    it[1:2:end-1].{fun_fft}   it[2:2:end].{fun_fft}
+    _                         it.*W.^(0:n÷2-1)
+#   ⋮        ⋱                ⋰         ⋮
+                (x1,x2)=them
+#   ⋮        ⋰                ⋱         ⋮
+    [x1.+x2          ;            x1.-x2]::Vector{ComplexF64}
 }
-
-
 ```
 
+Ths is a fully-functioning (albeit not particularly performant) recursive FFT. Note that this is radix-2 (i.e., it only works for arrays whose length is a power of two).
 
 
 # Performance Considerations
