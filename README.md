@@ -477,9 +477,8 @@ julia> (0:10...,).{
 
 This is a fully-functioning recursive FFT. Note that this is radix-2 (i.e., it only works for arrays whose length is a power of two). 
 
-On the performance front, there's no way these ten lines will beat the monster that is FFTW, but it's a cute toy. It's definitely better than a DFT doing naïve matrix multiplication (whose time and resource consumption scale as $n^4$, versus $n\log n$ for FFT):
+On the performance front, there's no way these ten lines will beat the monster that is FFTW, but it's a cute toy. As expected, it's definitely better than a DFT doing naïve matrix multiplication (whose time and resource consumption are $O(n^4)$, versus $O(n\log n)$ for FFT):
 
-[details="Some Benchmarking"]
 ```julia
 julia> @mc function dft(seq)
            N = seq.{length}
@@ -548,7 +547,6 @@ julia> x=randn(32768); @btime $x.{toy_fft}; @btime $x.{dft};
   8.915 ms (147586 allocations: 41.77 MiB)
   22.615 s (6 allocations: 16.00 GiB)
 ```
-[/details]
 
 # Performance Considerations
 
