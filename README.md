@@ -26,7 +26,7 @@ y = @mc x.{f, g}
 or you can invoke it on an entire block of expressions:
 
 ```julia
-@mc begin
+@mc function foo(x)
     y = x.{f, g}
     z = y.{h}
 end
@@ -39,7 +39,7 @@ MethodChains.init_repl()
 
 Then, you won't have to worry about typing `@mc` every time. 🤩
 
-Unfortunately it only seems to work for the REPL; VSCode and IJulia seems to be having trouble at the moment. (It works in the REPL in VSCode, but not for SHIFT+ENTER or CTRL+ENTER.) For these examples, it's recommended to use the REPL.
+That only seems to work for the REPL; VSCode and IJulia seems to be having trouble at the moment. (It works in the VSCode REPL, but not for SHIFT+ENTER or CTRL+ENTER.) For this reason, it's recommended to use the REPL.
 
 Definitely do not add this to your startup.jl file if you don't like having fun:
 
@@ -69,7 +69,15 @@ y = x.{f}.{g}.{h}
 
 (why you'd do that I don't know, but that's none of my beeswax!)
 
+You'll often find it handy to use chaining syntax even when the "chain" is only one element long, and that's dandy!
+
+```julia
+my_arr.{length}.prop + 1
+
+```
+
 Example:
+
 ```julia
 julia> randn(100).{maximum, sqrt}
 1.4735877523876308
@@ -83,12 +91,15 @@ y = x.{m}
 y = m(x)
 ```
 
-You can also construct one and immediately call it, but that's not really necessary (and takes greater compile time than the suffix position):
+In this case, `m` is called a "chainlink." Chainlinks are single-input, single-output functions defined with chaining syntax.
+
+You can also construct a chainlink and immediately call it, but that's not really necessary (and takes greater compile time than putting the chain in suffix position):
+
 ```julia
 y = {f, g, h}(x)
 ```
 
-Now, unless every function is a Clojure-style transducer, chances are that your functions won't compose perfectly like this. This situation happens in real life too—and to handle this, in the English language we reserve the pronoun "it," to give the object a local and temporary name to allow short (but flexible) manipulations spliced between larger functions. So, `MethodChains` also uses `it`.
+Now, unless every function is a Clojure-style transducer, or another chainlink, chances are that your functions won't compose perfectly like this. This situation happens in real life too—and to handle this, in the English language we reserve the pronoun "it," to give the object a local and temporary name to allow short (but flexible) manipulations spliced between larger functions. So, `MethodChains` also uses `it`.
 
 ```julia
 julia> x = 2;
@@ -111,7 +122,7 @@ julia> @macroexpand @mc x.{f, √(it - 1), g}
   end)
 ```
 
-Or, when constructing a chain that's not immediately called, a lambda is created:
+When constructing a chainlink, a function of `it` is created:
 ```julia
 julia> @macroexpand @mc {f, √(it - 1), g}
 :(MethodChainLink{Symbol("{f, √(it - 1), g}")}((it->begin
@@ -121,7 +132,7 @@ julia> @macroexpand @mc {f, √(it - 1), g}
           end)))
 ```
 
-Pretty simple, neh? `it` is a keyword *defined only locally inside the chain*, and on every step it takes on a new value. If an expression has `it` in it, then it's simply executed and the result overwrites `it`; otherwise it's assumed that it's a function, which is called on `it`.
+Pretty simple, neh? `it` is a keyword *defined only locally inside the chain*, and on every step it takes on a new value. If an expression in the chain has `it` in it, then it's simply executed and the result overwrites `it`; otherwise it's assumed that it evaluates to a function, which is called on `it` (and again, the result is assigned to `it`).
 
 These two do the same thing:
 
@@ -130,10 +141,18 @@ map({it^2}, 1:10)
 (1:10).{map({it^2}, it)}
 ```
 
-Couple more examples:
+A couple more examples:
 ```julia
-julia> (1,2,5).{(first(it):last(it)...,)}
-(1, 2, 3, 4, 5)
+julia> x = (0,3,5);
+
+julia> x.{(first(it):last(it)...,)}
+(0, 1, 2, 3, 4, 5)
+
+julia> (x.{first}:x.{last}...,)
+(0, 1, 2, 3, 4, 5)
+
+julia> x.{x.{sum} > 7 ? maximum : minimum}
+5
 
 julia> (1,2,3).{it.^2, sum, sqrt}
 3.7416573867739413
@@ -145,7 +164,7 @@ julia> "1,2,3".{split(it,","), parse.(Int,it), it.^2, join(it,",")}
 Now, the rule for whether to *call* the expression, or to leave it intact, or to assign `it` to it, is actually a bit more complicated (but pretty natural and straightforward). Check it out:
 
 ```julia
-julia> const avg = {len=length(it), sum(it)/len}
+julia> const avg = {len=it.{length}; sum(it)/len}
 {len = length(it), sum(it) / len}
 
 julia> (1,2,3).{avg}
@@ -171,13 +190,51 @@ Namely, regarding expressions inside the curly braces:
 * If an expression type returns nothing, such as a `for` or `while` loop, then it is executed but its result is not assigned to `it`. (Note: this does *not* apply to function calls, such as `println`.)
 * If an expression is a non-callable type, such as a comprehension, generator, tuple, or vector, then it is not called and is simply assigned to `it`.
 * If an expression is an expression of `it`, then it is simply executed and assigned to `it`.
-* Otherwise, it's assumed that the expression is callable, and so it should be called on `it`. This is the default behavior.
+* Otherwise it's assumed that the expression evaluates to something callable, and so it should be called on `it` and assigned to `it`. This is the default behavior.
 
 If it's desired to override the default behavior of method calling, you can make an explicit assignment to `it`.
 
 ## Examples
 
-*Example from Chain.jl Readme*
+*My Examples*
+```julia
+[1,2,3].{map({it^2}, it)}
+[1,2,3].{join(it, ", ")}
+"1".{parse(Int, it)} == 1
+(1,2).{(a,b)=it, (;b,a)}
+```
+
+*Operator Precedence*
+```julia
+julia> (1,2).{(a,b)=it,(;b,a)}.b
+2
+
+julia> (1,2).{(a,b)=it,(;b,a)}[1]
+2
+```
+
+*Examples from [Pipe.jl](https://github.com/oxinabox/Pipe.jl) Readme*
+
+```julia
+a.{b(it...)}
+a.{b(it(1,2))}
+a.{b(it[3])}
+(2,4).{get_angle(it...)}
+```
+
+*Block Chaining*
+
+```julia
+julia> [1,2,3].{
+           filter(isodd, it),
+           map({it^2}, it),
+           sum,
+           sqrt
+       }
+3.1622776601683795
+```
+
+*Example from [Chain.jl](https://github.com/jkrumbiegel/Chain.jl) Readme*
 
 ```julia
 df.{
@@ -189,7 +246,7 @@ df.{
 }
 ```
 
-*Example from DataPipes.jl Readme*
+*Example from [DataPipes.jl](https://gitlab.com/aplavin/DataPipes.jl) Readme*
 
 ```julia
 julia> "a=1 b=2 c=3".{
@@ -203,45 +260,6 @@ julia> "a=1 b=2 c=3".{
 (a = 1, b = 2, c = 3)
 ```
 
-*Examples from Pipe.jl Readme*
-
-```julia
-a.{b(it...)}
-a.{b(it(1,2))}
-a.{b(it[3])}
-(2,4).{get_angle(it...)}
-```
-
-*My Examples*
-```julia
-[1,2,3].{map({it^2}, it)}
-[1,2,3].{join(it, ", ")}
-"1".{parse(Int, it)} == 1
-(1,2).{(a,b)=it, (;b,a)}
-```
-
-
-*Operator Precedence*
-```julia
-julia> (1,2).{(a,b)=it,(;b,a)}.b
-2
-
-julia> (1,2).{(a,b)=it,(;b,a)}[1]
-2
-```
-
-*Chaining*
-
-```julia
-julia> [1,2,3].{
-           filter(isodd, it),
-           map({it^2}, it),
-           sum,
-           sqrt
-       }
-3.1622776601683795
-```
-
 *More*
 
 ```julia
@@ -253,18 +271,18 @@ julia> "1 2, 3; hehe4".{
 "1, 2, 3, 4"
 ```
 
-(Do I want to use the adjoint operator to denote chains that will be broadcasted?)
-
-*Saving a Chain*
+*Saving a Chainlink*
 
 ```julia
-julia> chain = {split(it, r",\s*"), {parse(Int, it)^2}.(it), join(it, ", ")};
+julia> chainlink = {split(it, r",\s*"), {parse(Int, it)^2}.(it), join(it, ", ")};
 
-julia> "1, 2, 3, 4".{chain}
+julia> "1, 2, 3, 4".{chainlink}
 "1, 4, 9, 16"
 ```
 
 *Transducer Chain*
+
+(example taken from [this presentation](https://www.youtube.com/watch?v=6mTbuzafcII))
 
 ```julia
 process_bags = {
@@ -277,16 +295,20 @@ process_bags.{into(airplane, it, pallets)}
 
 # *Advanced Use*
 
-That was fun! This chaining syntax allows for really basic composition, like `x.{f, g, h}`, but also some more advanced stuff too like `x.{f, it.a, g}` or `x.{i for i ∈ 1:it}`. Why would you use this instead of a function? Because on every line you're presumed *most likely* to call a function on, or otherwise manipulate, the object `it`, this default behavior frequently enables very concise expressions. It also hints to the IDE autocomplete what type of object you're likely about to call a function on, as well as providing a natural "flow" of thought as the object passes through a sequence of transformations. Finally, calling the chain immediately (e.g. `x.{expr1, expr2, ...}`) doesn't allocate a function, which keeps compile time minimized, while still being a shorthand for creating locally-scoped variables.
+That was fun! This chaining syntax allows for really basic composition, like `x.{f, g, h}`, but also some more advanced stuff too like `x.{f, it.a, g}` or `x.{i for i ∈ 1:it}`. 
+
+Why would you use this instead of normal function call syntax? Because on every line you're presumed *most likely* to call a function on, or otherwise manipulate, the object `it`, this default behavior frequently enables very concise expressions. It also hints to the IDE autocomplete what type of object you're likely about to call a function on, as well as providing a natural "flow" of thought as the object passes through a sequence of transformations. Finally, calling the chain immediately (e.g. `x.{expr1, expr2, ...}`) doesn't allocate a function, which keeps compile time minimized, while still being a shorthand for creating locally-scoped variables.
 
 But there's even more to it. (This is the *really* experimental feature of this syntax, so please play with it and offer feedback!)
 
-## 2-dimensional chains
+## Multi-Chains
 
 
 So far we've discussed one-dimensional chains, wherein a single object undergoes a sequence of transformations in time. However, we can also express two-dimensional chains, wherein multiple objects spread across space undergo their own transformation chains, and occasionally interact, through time. 
 
 The syntax is similar to that for vector and matrix building. Semicolons or newlines separate rows, and horizontal whitespace separates expressions within a row. When newlines delimit rows, semicolons are optional.
+
+I suggest you skip to the bottom to look at the examples to gain some motivation for what this syntax could be used for, and then return here.
 
 Take this for example:
 
@@ -300,7 +322,8 @@ Take this for example:
     them
 }
 ```
-The result of this chain is equivalent to `(h(g(f(a)))+3, f(h(g(b)))*2, g(f(h(c)))+1)`. Notice that the expression represents three chains; the three input elements have been splatted across the top row, and the values waterfall down to the bottom where they are collected into a tuple. The pronoun `it` is, again, local to each chain, and the pronoun `them`, whenever it appears, collects all `it`s into a tuple. Another example:
+
+The result of this chain is equivalent to `(h(g(f(a)))+3, f(h(g(b)))*2, g(f(h(c)))+1)`. Notice that the expression represents three chains; the three elements of the input argument have been splatted across the top row, and the values waterfall down to the bottom where they are collected into a tuple. The pronoun `it` is, again, local to each chain, and the pronoun `them`, any time it appears in a row, collects all `it`s from the previous row into a tuple. Another example:
 
 ```julia
 (2-2im).{
@@ -310,7 +333,7 @@ The result of this chain is equivalent to `(h(g(f(a)))+3, f(h(g(b)))*2, g(f(h(c)
 }
 ```
 
-Here, the input was \*not\* splatted across the top row. When the next row has more elements than the last, and the last did not splat, then the last element of the row above is copied across. Notice that after the chains, the two chains came together and interacted.
+Here, the input argument was \*not\* splatted across the top row. When the next row has more columns than the last, and the last did not splat, then the last element of the row above is copied across. At the bottom, the two chains came together and interacted by first being collected into `them`, which was then splatted into the `Complex` constructor.
 
 > Question for the reader: Is copying the *last* value across the preferred behavior? Or perhaps, would copying the sequence, e.g.:
 >
@@ -361,7 +384,7 @@ New chains can also be instantiated with an assignment to `it`. Previous values 
 
 The return value here is `(2, 3)`.
 
-It's a little funky to be playing around with expressions of just `it` and `them`, but it's instructive (and weirdly therapeutic) so try it!
+It's a little funky to be playing around with expressions of just `it` and `them`, but it's instructive (and weirdly therapeutic), so try it!
 
 Fun question: On the line with two `it`s after `them[2:3]...`, what happens if you add another `it`? 😏
 
@@ -369,7 +392,7 @@ Fun question: On the line with two `it`s after `them[2:3]...`, what happens if y
 
 Let's discuss how it works, so you really understand what's going on.
 
-When you create a multi-chain (a method chain with multiple columns), first a "background chain" is started. The background chain has two local keywords defined, `it` and `them`. The keyword `it` acts just as before. The keyword `them` has interesting behavior, which we'll see in a bit. Like expressions of `it`, expressions of `them` are not called, and are instead assigned to `it`. As with 1-D chains, any variables defined in a 2-D chain are local to that chain.
+When you create a multi-chain (a method chain with multiple columns), first a "background chain" is started. The background chain has two local keywords defined, `it` and `them`. The keyword `it` acts just as before. The keyword `them` has interesting behavior, which we'll explore in a bit. Like expressions of `it`, expressions of `them` are not called, and are instead assigned to `it`. As with single chains, any variables defined in a multi-chain are local to that chain.
 
 When a row with more than one column starts, subchains begin (and execution of the background chain is paused). Any local variables in the background chain are accessible to the subchains, except that of course each sub-chain has its own local `it` defined.
 
@@ -436,14 +459,14 @@ julia> (0:10...,).{
 *FFT Butterfly*
 
 ```julia
-@mc const fun_fft = {
+@mc const toy_fft = {
     # setup
     Vector{ComplexF64}
     n = it.{length}
-    n == 2 && (return [it[1]+it[2]; it[1]-it[2]]) || it
+    n == 2 && (return [it[1]+it[2]; it[1]-it[2]]) || it # base case
     W = exp(-2π*im/n)
     # butterfly
-    it[1:2:end-1].{fun_fft}   it[2:2:end].{fun_fft}
+    it[1:2:end-1].{toy_fft}   it[2:2:end].{toy_fft}
     _                         it.*W.^(0:n÷2-1)
 #   ⋮        ⋱                ⋰         ⋮
                 (x1,x2)=them
@@ -452,20 +475,80 @@ julia> (0:10...,).{
 }
 ```
 
-Ths is a fully-functioning (although not very performant) recursive FFT. Note that this is radix-2 (i.e., it only works for arrays whose length is a power of two).
+This is a fully-functioning recursive FFT. Note that this is radix-2 (i.e., it only works for arrays whose length is a power of two). 
 
-To call:
+On the performance front, there's no way these ten lines will beat the monster that is FFTW, but it's a cute toy. It's definitely better than a DFT doing naïve matrix multiplication (whose time and resource consumption scale as $n^4$, versus $n\log n$ for FFT):
+
+[details="Some Benchmarking"]
 ```julia
-julia> x = randn(1024);
+julia> @mc function dft(seq)
+           N = seq.{length}
+           ℱ = [exp(-2π*im*m*n/N) for m∈0:N-1, n∈0:N-1]
+           ℱ * seq
+       end
+dft (generic function with 1 method)
 
-julia> x.{fun_fft}
-1024-element Vector{ComplexF64}:
+julia> x=randn(2); @btime $x.{toy_fft}; @btime $x.{dft};
+  45.197 ns (2 allocations: 192 bytes)
+  162.435 ns (3 allocations: 320 bytes)
 
-julia> using FFTW
+julia> x=randn(4); @btime $x.{toy_fft}; @btime $x.{dft};
+  245.596 ns (11 allocations: 1.09 KiB)
+  409.000 ns (3 allocations: 592 bytes)
 
-julia> (x.{fun_fft} .≈ x.{fft}) |> all
-true
+julia> x=randn(8); @btime $x.{toy_fft}; @btime $x.{dft};
+  669.737 ns (29 allocations: 3.19 KiB)
+  1.320 μs (3 allocations: 1.44 KiB)
+
+julia> x=randn(16); @btime $x.{toy_fft}; @btime $x.{dft};
+  1.540 μs (65 allocations: 7.97 KiB)
+  4.857 μs (3 allocations: 4.78 KiB)
+
+julia> x=randn(32); @btime $x.{toy_fft}; @btime $x.{dft};
+  3.325 μs (137 allocations: 18.70 KiB)
+  18.800 μs (3 allocations: 17.25 KiB)
+
+julia> x=randn(64); @btime $x.{toy_fft}; @btime $x.{dft};
+  7.075 μs (281 allocations: 42.34 KiB)
+  127.500 μs (4 allocations: 66.17 KiB)
+
+julia> x=randn(128); @btime $x.{toy_fft}; @btime $x.{dft};
+  15.000 μs (569 allocations: 94.25 KiB)
+  379.300 μs (4 allocations: 260.30 KiB)
+
+julia> x=randn(256); @btime $x.{toy_fft}; @btime $x.{dft};
+  32.400 μs (1145 allocations: 207.38 KiB)
+  1.421 ms (4 allocations: 1.01 MiB)
+
+julia> x=randn(512); @btime $x.{toy_fft}; @btime $x.{dft};
+  69.200 μs (2297 allocations: 451.62 KiB)
+  5.528 ms (4 allocations: 4.02 MiB)
+
+julia> x=randn(1024); @btime $x.{toy_fft}; @btime $x.{dft};
+  147.800 μs (4601 allocations: 976.12 KiB)
+  21.369 ms (4 allocations: 16.03 MiB)
+
+julia> x=randn(2048); @btime $x.{toy_fft}; @btime $x.{dft};
+  339.000 μs (9211 allocations: 2.05 MiB)
+  84.898 ms (6 allocations: 64.06 MiB)
+
+julia> x=randn(4096); @btime $x.{toy_fft}; @btime $x.{dft};
+  761.300 μs (18436 allocations: 4.38 MiB)
+  340.492 ms (6 allocations: 256.13 MiB)
+
+julia> x=randn(8192); @btime $x.{toy_fft}; @btime $x.{dft};
+  1.736 ms (36886 allocations: 9.32 MiB)
+  1.363 s (6 allocations: 1.00 GiB)
+
+julia> x=randn(16384); @btime $x.{toy_fft}; @btime $x.{dft};
+  3.881 ms (73786 allocations: 19.76 MiB)
+  5.544 s (6 allocations: 4.00 GiB)
+
+julia> x=randn(32768); @btime $x.{toy_fft}; @btime $x.{dft};
+  8.915 ms (147586 allocations: 41.77 MiB)
+  22.615 s (6 allocations: 16.00 GiB)
 ```
+[/details]
 
 # Performance Considerations
 
@@ -473,9 +556,9 @@ When defining a chainlink, e.g.
 
 `chain = {f, g, h}`,
 
-a function is created, and on its first run with a particular type it will be compiled (whether called by `x.{chain}` or by `chain(x)`). In contrast, when calling `x.{f, g, h}` directly, no function is created or compiled, so evaluation occurs at maximum possible speed.
+a function is created, and on its first run with a particular type it will be compiled (whether called by `x.{chain}` or by `chain(x)`). In contrast, when calling `x.{f, g, h}` directly, no function is created or compiled, so execution occurs with minimum time and resources.
 
-If it's necessary to save a `chain`, it's recommended to set it to a constant value `const`. This is to avoid type-instability, which causes slower runtime:
+If it's necessary to save a `chain` as a global object, it's recommended to set it to a constant value `const`. This is to avoid type-instability, which causes slower runtime:
 
 ```julia
 julia> chain = {it+1}
@@ -493,7 +576,7 @@ julia> @btime (1).{chain_const}
 2
 ```
 
-Namely, when `chain` isn't a `const`, its type is not known at runtime so it must be boxed, and its return value is also unknown so that too must be boxed. 
+Namely, when `chain` isn't a `const`, its type is not known at runtime so it must be boxed, and its return value is also unknown so that too must be boxed. But this is true of any global variable.
 
 When performing benchmarks, be careful to ensure the correct things are being measured. For example, let's try this:
 
@@ -528,24 +611,11 @@ julia> @btime [1,2]./2
  1.0
 ```
 
-# *Errata*
+# *Errata / Points of Debate*
 
 1. I don't have multi-threading implemented yet.
-2. Inserting 
-
-It might also be nice to write macros to make it easier to call `println`. Maybe `@printit` and `@printthem`?
-
-This works for `@printit`:
-```julia
-macro printit()
-    esc(:((println(it); it)))
-end
-```
-
-but `@printthem` is going to take more thinking.
-
-Up for debate: instead of `it` and `them`, use `me` and `us`? 🤔
-
-To add: subchain splatting (so that long rows can be made by splatting in vertically arranged expressions)?
-
-Adjoint?
+2. It might also be nice to have macros to make it easier to call `println`, or otherwise ignore an expression's return value.
+3. Up for debate: instead of `it` and `them`, use `me` and `us`? 🤔
+4. To add: subchain splatting (so that long rows can be made by splatting in vertically arranged expressions)?
+5. What's the adjoint of a chain or multi-chain?
+6. As mentioned before: what's the best way to copy values into new chains, and drop old chains? Left-aligned, right-aligned, etc.?
