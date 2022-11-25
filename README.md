@@ -452,8 +452,20 @@ julia> (0:10...,).{
 }
 ```
 
-Ths is a fully-functioning (albeit not particularly performant) recursive FFT. Note that this is radix-2 (i.e., it only works for arrays whose length is a power of two).
+Ths is a fully-functioning (although not very performant) recursive FFT. Note that this is radix-2 (i.e., it only works for arrays whose length is a power of two).
 
+To call:
+```julia
+julia> x = randn(1024);
+
+julia> x.{fun_fft}
+1024-element Vector{ComplexF64}:
+
+julia> using FFTW
+
+julia> (x.{fun_fft} .≈ x.{fft}) |> all
+true
+```
 
 # Performance Considerations
 
