@@ -548,6 +548,8 @@ julia> x=randn(32768); @btime $x.{toy_fft}; @btime $x.{dft};
   22.615 s (6 allocations: 16.00 GiB)
 ```
 
+GLHF!
+
 # Performance Considerations
 
 When defining a chainlink, e.g.

@@ -131,9 +131,9 @@ function has(ex, s=:it) # true if ex is an expression of "it", and it isn't cont
 end
 
 do_not_assign_it(ex) = ex isa Expr && (ex.head ∈ (:(=), :for, :while)  )#|| ex.head == :tuple && is_expr(last(ex.args), :(=))) # this is for a,b=it; doesn't work, must parenthesize (a,b) anyway 
-is_not_callable(ex) = ex isa Expr && ex.head ∈ (:(=), :for, :while, :comprehension, :generator, :tuple, :vect, :vcat, :ncat, :quote, :macrocall) || 
+is_not_callable(ex) = ex isa Expr && ex.head ∈ (:for, :while, :comprehension, :generator, :tuple, :vect, :vcat, :ncat, :quote, :macrocall) || 
     !(ex isa Expr) && !(ex isa Symbol) 
-do_not_call(ex) = is_not_callable(ex) || (ex isa Expr && ex.head == :(::) && is_not_callable(ex.args[1]))
+do_not_call(ex) = is_not_callable(ex) || is_expr(ex, :(=)) || (ex isa Expr && ex.head == :(::) && is_not_callable(ex.args[1]))
     #ex isa Number || ex isa QuoteNode || ex isa Char || ex isa String || ex isa Bool
 # did I miss any?
 
@@ -207,7 +207,7 @@ function multi_chain(ex) # this is somewhat messy
         end
     end
     out = out[begin:end-1] # truncate last `them=(it,)` statement
-    out
+    out #𝓏𝓇
 end
 
 
