@@ -83,6 +83,24 @@ using Test
             them
         } .≈ (3.1622776601683795, 10.0, 5.0)) |> all
 
+        @test @mc (3.141).{{sin}, cos} == (3.141).{{sin}; cos} == cos(sin(3.141))
+
+        @mc toy_fft = {
+            # setup
+            Vector{ComplexF64}
+            n = it.{length}
+            n == 2 && (return [it[1]+it[2]; it[1]-it[2]]) || it # base case
+            W = exp(-2π*im/n)
+            # butterfly
+            it[1:2:end-1].{toy_fft}   it[2:2:end].{toy_fft}
+            _                         it.*W.^(0:n÷2-1)
+        #   ⋮        ⋱                ⋰         ⋮
+                        (x1,x2)=them
+        #   ⋮        ⋰                ⋱         ⋮
+            [x1.+x2          ;            x1.-x2]::Vector{ComplexF64}
+        }
+
+        @test @mc [1,2,3,4].{toy_fft} ≈ [10.0 + 0.0im, -2.0 + 2.0im, -2.0 + 0.0im, -2.0 - 2.0im]
     end
 
 end
