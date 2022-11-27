@@ -23,18 +23,20 @@ function method_chains(ex)
     if type == SINGLE_CHAIN
         ex = :(let it=$(ex.args[1]); $(single_chain(chain)...) end)  |> clean_blocks
     elseif type == SINGLE_CHAIN_LINK
-        quotedex = Expr(:quote, Symbol("$ex"))
-        ex = :(it -> ($(single_chain(chain)...))) |> clean_blocks
-        ex = :(MethodChainLink{$quotedex}($ex))
+#        quotedex = "$ex"
+        ex = :(ChainLink(it) = ($(single_chain(chain)...); it)) |> clean_blocks
+        ex = :(let; $ex end) |> clean_blocks
+#        ex = :(MethodChainLink{$quotedex}($ex))
     elseif type == MULTI_CHAIN
         ex = :(let it=$(ex.args[1]), them=(it,); $(multi_chain(chain)...); it end) |> clean_blocks
     elseif type == MULTI_CHAIN_LINK
-        quotedex = Expr(:quote, Symbol("$ex"))
-        ex = :(it -> (them=(it,); $(multi_chain(chain)...); it)) |> clean_blocks 
-        ex = :(MethodMultiChainLink{$quotedex}($ex))
+#        quotedex = Expr(:quote, Symbol("$ex"))
+        ex = :(MultiChainLink(it) = ($(multi_chain(chain)...); it)) |> clean_blocks
+        ex = :(let; $ex end) |> clean_blocks
+#        ex = :(MethodMultiChainLink{$quotedex}($ex))
     elseif type == BROADCASTING_SINGLE_CHAIN
         # stuff
-    elseif type == BROADCASTING_SINGLE_CHAIN_LINK
+    elseif type == BROADCASTING_SINGLE_CHAIN_LINK # vestigial; leaving as an artifact for when this is uncovered two thousand years from now
         quotedex = Expr(:quote, Symbol("$ex"))
         ex = :(it -> broadcast(it -> ($(single_chain(chain)...)), it)) |> clean_blocks
         ex = :(BroadcastingMethodChainLink{$quotedex}($ex))
@@ -52,7 +54,7 @@ function method_chains(ex)
 end
 
 function clean_blocks(ex)
-    if is_expr(ex, :->) || is_expr(ex, :let)
+    if is_expr(ex, :(=)) || is_expr(ex, :let)
         ex.args[2].args = filter(x->!(x isa LineNumberNode), ex.args[2].args)
     end
     ex
