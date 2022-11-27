@@ -111,7 +111,7 @@ function single_chain(ex::Expr, (is_nested_in_multichain, setwhat) = (false, :it
         elseif has(e, :it) || do_not_call(e) || is_nested_in_multichain && has(e, :them)
             push!(out, :($setwhat = $e))
         elseif is_expr(e, :braces) || is_expr(e, :bracescat) # nested chains
-            push!(out, method_chains(Expr(:., setwhat, Expr(:quote, e))))
+            push!(out, :(it = $(method_chains(Expr(:., setwhat, Expr(:quote, e))))))
         else
             push!(out, :(it = $(Expr(:call, e, setwhat))))
         end
