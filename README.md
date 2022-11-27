@@ -463,7 +463,7 @@ julia> (0:10...,).{
     # setup
     Vector{ComplexF64}
     n = it.{length}
-    n == 2 && (return [it[1]+it[2]; it[1]-it[2]]) || it # base case
+    if n == 2 return [it[1]+it[2]; it[1]-it[2]] else it end # base case
     W = exp(-2π*im/n)
     # butterfly
     it[1:2:end-1].{toy_fft}   it[2:2:end].{toy_fft}
@@ -613,6 +613,7 @@ julia> @btime [1,2]./2
 
 # *Errata / Points of Debate*
 
+0. Multi-chaining is buggy. I was hacking the code at the same time as working out the ideas for how it should work, so it's still in spaghetti mode. For example, `@macroexpand @mc (1,2,3).{x=5;it...;them.+x}` shows the definition of `x` just disappears. I need to fix this.
 1. I don't have multi-threading implemented yet.
 2. It might also be nice to have macros to make it easier to call `println`, or otherwise ignore an expression's return value.
 3. Up for debate: instead of `it` and `them`, use `me` and `us`? 🤔
