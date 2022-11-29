@@ -101,6 +101,8 @@ using Test
         }
 
         @test @mc [1,2,3,4].{toy_fft} ≈ [10.0 + 0.0im, -2.0 + 2.0im, -2.0 + 0.0im, -2.0 - 2.0im]
+
+        @test @mc (1,2,3).{x=5;it...;them.+x} == (6, 7, 8)
     end
 
 end

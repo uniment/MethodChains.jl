@@ -477,7 +477,7 @@ julia> (0:10...,).{
 
 This is a fully-functioning recursive FFT. Note that this is radix-2 (i.e., it only works for arrays whose length is a power of two). 
 
-On the performance front, there's no way these fourteen lines (ten excluding comments) will beat the monster that is FFTW, but it's a cute toy. As expected, it's definitely better than a DFT doing naïve matrix multiplication (whose time and resource consumption are $O(n^2)$, versus $O(n\log n)$ for FFT):
+On the performance front, there's no way these fourteen lines (ten excluding comments) will beat the monster that is FFTW (which is optimized to the hilt and uses memoization to store the twiddle factors), but it's a cute toy. As expected, it's definitely better than a DFT doing naïve matrix multiplication (whose time and resource consumption are $O(n^2)$, versus $O(n\log n)$ for FFT):
 
 ```julia
 julia> @mc function dft(x̲)
@@ -613,10 +613,8 @@ julia> @btime [1,2]./2
 
 # *Errata / Points of Debate*
 
-0. Multi-chaining is buggy. I was hacking the code at the same time as working out the ideas for how it should work, so it's still in spaghetti mode. For example, `@macroexpand @mc (1,2,3).{x=5;it...;them.+x}` shows the definition of `x` just disappears. I need to fix this.
 1. I don't have multi-threading implemented yet.
 2. It might also be nice to have macros to make it easier to call `println`, or otherwise ignore an expression's return value.
-3. Up for debate: instead of `it` and `them`, use `me` and `us`? 🤔
-4. To add: subchain splatting (so that long rows can be made by splatting in vertically arranged expressions)?
-5. What's the adjoint of a chain or multi-chain?
-6. As mentioned before: what's the best way to copy values into new chains, and drop old chains? Left-aligned, right-aligned, etc.?
+3. To add: subchain splatting (so that long rows can be made by splatting in vertically arranged expressions)?
+4. What's the adjoint of a chain or multi-chain?
+5. As mentioned before: what's the best way to copy values into new chains, and drop old chains? Left-aligned, right-aligned, etc.?
