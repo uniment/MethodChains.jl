@@ -27,14 +27,14 @@ function method_chains(ex)
         ex = :(let $it=$(ex.args[1]); $(single_chain(chain)...); end)  |> clean_blocks
     elseif type == SINGLE_CHAIN_LINK
 #        quotedex = "$ex"
-        ex = :(ChainLink($it) = ($(single_chain(chain)...);)) |> clean_blocks
+        ex = :(recurse($it) = ($(single_chain(chain)...);)) |> clean_blocks
         ex = :(let; $ex end) |> clean_blocks
 #        ex = :(MethodChainLink{$quotedex}($ex))
     elseif type == MULTI_CHAIN
         ex = :(let $it=$(ex.args[1]), $them=($it,); $(multi_chain(chain)...); end) |> clean_blocks
     elseif type == MULTI_CHAIN_LINK
 #        quotedex = Expr(:quote, Symbol("$ex"))
-        ex = :(MultiChainLink($it) = (local $them = ($it,); $(multi_chain(chain)...);)) |> clean_blocks
+        ex = :(recurse($it) = (local $them = ($it,); $(multi_chain(chain)...);)) |> clean_blocks
         ex = :(let; $ex end) |> clean_blocks
 #        ex = :(MethodMultiChainLink{$quotedex}($ex))
     elseif type == BROADCASTING_SINGLE_CHAIN

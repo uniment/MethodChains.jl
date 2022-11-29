@@ -36,6 +36,7 @@ using Test
     end
 
     @testset "Multi Chains" begin
+        @test @mc (1,2,3).{them; them; them} == ((((1, 2, 3),),),)
         p(x) = x+1; q(x) = 2x; r(x) = x^2
         @test @mc (1, 2, 3).{
                 it...
