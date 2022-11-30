@@ -10,8 +10,10 @@ export @mc
     BROADCASTING_SINGLE_CHAIN_LINK, BROADCASTING_MULTI_CHAIN_LINK,
 )
 
-const it=:it
-const them=:them
+# these are the local keywords
+const it=:it                    # pronoun for single chains
+const them=:them                # pronoun for collecting chains
+const chain_link_name=:chain    # self-referential chain name for recursion
 
 macro mc(ex)
     ex = mc(ex)
@@ -22,20 +24,30 @@ function mc(ex)
 end
 
 function method_chains(ex)
-    chain, type = get_chain(ex)
+    chain, type = get_chain(ex)        
+
+    # as long var"#self#" is supported, and as long as named function syntax behavior within local scopes stays unreasonable
+    function help_recursion!(args)
+        args .= [x == chain_link_name ? :(var"#self#") : x for x ∈ args]
+        for x ∈ args
+            x isa Expr && !is_expr(x, :braces) && !is_expr(x, :bracescat) && help_recursion!(x.args)
+        end
+    end
+    type ≠ NONCHAIN && help_recursion!(chain)
+
     if type == SINGLE_CHAIN
         ex = :(let $it=$(ex.args[1]); $(single_chain(chain)...); end)  |> clean_blocks
     elseif type == SINGLE_CHAIN_LINK
 #        quotedex = "$ex"
-        ex = :(chain($it) = ($(single_chain(chain)...);)) |> clean_blocks
-        ex = :(let chain=$ex; chain end) |> clean_blocks
+        ex = :($chain_link_name($it) = ($(single_chain(chain)...);)) |> clean_blocks
+        ex = :(let; $ex end) |> clean_blocks
 #        ex = :(MethodChainLink{$quotedex}($ex))
     elseif type == MULTI_CHAIN
         ex = :(let $it=$(ex.args[1]), $them=($it,); $(multi_chain(chain)...); end) |> clean_blocks
     elseif type == MULTI_CHAIN_LINK
 #        quotedex = Expr(:quote, Symbol("$ex"))
-        ex = :(chain($it) = (local $them = ($it,); $(multi_chain(chain)...);)) |> clean_blocks
-        ex = :(let chain=$ex; chain end) |> clean_blocks
+        ex = :($chain_link_name($it) = (local $them = ($it,); $(multi_chain(chain)...);)) |> clean_blocks
+        ex = :(let; $ex end) |> clean_blocks
 #        ex = :(MethodMultiChainLink{$quotedex}($ex))
     elseif type == BROADCASTING_SINGLE_CHAIN
         # stuff
@@ -114,7 +126,7 @@ function single_chain(exarr::Vector, (is_nested_in_multichain, pronoun) = (false
             if e == last(exarr) push!(out, pronoun) end
         elseif has(e, it) || do_not_call(e) || is_nested_in_multichain && has(e, them)
             push!(out, :($pronoun = $e))
-        elseif is_expr(e, :braces) || is_expr(e, :bracescat) # nested chains
+        elseif (is_expr(e, :braces) || is_expr(e, :bracescat)) && !any(has(sube, chain_link_name) for sube ∈ e.args) # nested, non-recursive chains
             push!(out, :($it = $(method_chains(Expr(:., pronoun, Expr(:quote, e))))))
         else
             push!(out, :($it = $(Expr(:call, e, pronoun))))

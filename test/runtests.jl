@@ -31,8 +31,9 @@ using Test
                 map({first, parse(Int, it)}, it)
                 join(it, ", ")
             } == "1, 2, 3, 4"
-        @mc chain = {split(it, r",\s*"), {parse(Int, it)^2}.(it), join(it, ", ")};
-        @test @mc "1, 2, 3, 4".{chain} == "1, 4, 9, 16"
+        @mc cchain = {split(it, r",\s*"), {parse(Int, it)^2}.(it), join(it, ", ")};
+        @test @mc "1, 2, 3, 4".{cchain} == "1, 4, 9, 16"
+        @test @mc (9).{it+1, {it ≤ 1 ? it : chain(it-1)+chain(it-2)}} == 55
     end
 
     @testset "Multi Chains" begin
@@ -94,6 +95,23 @@ using Test
             W = exp(-2π*im/n)
             # butterfly
             it[1:2:end-1].{toy_fft}   it[2:2:end].{toy_fft}
+            _                         it.*W.^(0:n÷2-1)
+        #   ⋮        ⋱                ⋰         ⋮
+                        (x1,x2)=them
+        #   ⋮        ⋰                ⋱         ⋮
+            [x1.+x2          ;            x1.-x2]::Vector{ComplexF64}
+        }
+
+        @test @mc [1,2,3,4].{toy_fft} ≈ [10.0 + 0.0im, -2.0 + 2.0im, -2.0 + 0.0im, -2.0 - 2.0im]
+
+        @mc toy_fft = {
+            # setup
+            Vector{ComplexF64}
+            n = it.{length}
+            n == 2 && (return [it[1]+it[2]; it[1]-it[2]]) || it # base case
+            W = exp(-2π*im/n)
+            # butterfly
+            it[1:2:end-1].{chain}   it[2:2:end].{chain}
             _                         it.*W.^(0:n÷2-1)
         #   ⋮        ⋱                ⋰         ⋮
                         (x1,x2)=them
