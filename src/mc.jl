@@ -13,7 +13,7 @@ export @mc
 # these are the local keywords
 const it=:it                    # pronoun for single chains
 const them=:them                # pronoun for collecting chains
-const chain_link_name=:chain    # self-referential chain name for recursion
+const chain_link_name=:loop     # self-referential chain name for recursion
 
 macro mc(ex)
     ex = mc(ex)
@@ -126,8 +126,9 @@ function single_chain(exarr::Vector, (is_nested_in_multichain, pronoun) = (false
             if e == last(exarr) push!(out, pronoun) end
         elseif has(e, it) || do_not_call(e) || is_nested_in_multichain && has(e, them)
             push!(out, :($pronoun = $e))
-        elseif (is_expr(e, :braces) || is_expr(e, :bracescat)) && !any(has(sube, chain_link_name) for sube ∈ e.args) # nested, non-recursive chains
-            push!(out, :($it = $(method_chains(Expr(:., pronoun, Expr(:quote, e))))))
+#       This code (inlines nested chainlinks) is broken for recursive chainlinks, so let's leave it out for now
+#        elseif (is_expr(e, :braces) || is_expr(e, :bracescat)) && !any(has(sube, chain_link_name) for sube ∈ e.args) # nested, non-recursive chains
+#            push!(out, :($it = $(method_chains(Expr(:., pronoun, Expr(:quote, e))))))
         else
             push!(out, :($it = $(Expr(:call, e, pronoun))))
         end
@@ -219,7 +220,7 @@ function multi_chain(exarr) # let's give this another try
     end
     push!(out, :($them = ($(wrap_chains(chains)...),)))
     push!(out, it)
-    out
+    out #𝓏𝓇
 end
 # need to add back: if there is no `them` present to collect, the background chain needs to take on a default value.
 

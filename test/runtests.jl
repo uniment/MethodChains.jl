@@ -31,9 +31,10 @@ using Test
                 map({first, parse(Int, it)}, it)
                 join(it, ", ")
             } == "1, 2, 3, 4"
-        @mc cchain = {split(it, r",\s*"), {parse(Int, it)^2}.(it), join(it, ", ")};
-        @test @mc "1, 2, 3, 4".{cchain} == "1, 4, 9, 16"
-        @test @mc (9).{it+1, {it ≤ 1 ? it : chain(it-1)+chain(it-2)}} == 55
+        @mc chain = {split(it, r",\s*"), {parse(Int, it)^2}.(it), join(it, ", ")};
+        @test @mc "1, 2, 3, 4".{chain} == "1, 4, 9, 16"
+        @test @mc (9).{it+1, {it ≤ 1 ? it : loop(it-1)+loop(it-2)}} == 55
+        @test @mc (5).{it+5, {it ≤ 1 ? it : (it-1).{loop}+(it-2).{loop}}} == 55
     end
 
     @testset "Multi Chains" begin
@@ -111,7 +112,7 @@ using Test
             n == 2 && (return [it[1]+it[2]; it[1]-it[2]]) || it # base case
             W = exp(-2π*im/n)
             # butterfly
-            it[1:2:end-1].{chain}   it[2:2:end].{chain}
+            loop(it[1:2:end-1])       loop(it[2:2:end])
             _                         it.*W.^(0:n÷2-1)
         #   ⋮        ⋱                ⋰         ⋮
                         (x1,x2)=them
