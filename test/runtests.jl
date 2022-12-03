@@ -35,6 +35,7 @@ using Test
         @test @mc "1, 2, 3, 4".{chain} == "1, 4, 9, 16"
         @test @mc (9).{it+1, {it ≤ 1 ? it : loop(it-1)+loop(it-2)}} == 55
         @test @mc (5).{it+5, {it ≤ 1 ? it : (it-1).{loop}+(it-2).{loop}}} == 55
+        @test @mc map([1,2,3]) do {it^2} end == [1, 4, 9]
     end
 
     @testset "Multi Chains" begin
