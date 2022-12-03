@@ -614,7 +614,8 @@ julia> @btime [1,2]./2
 # *Errata / Points of Debate*
 
 1. I don't have multi-threading implemented yet.
-2. It might also be nice to have macros to make it easier to call `println`, or otherwise ignore an expression's return value.
+2. ~~It might also be nice to have macros to make it easier to call `println`, or otherwise ignore an expression's return value.~~ `@show` works perfectly.
 3. To add: subchain splatting (so that long rows can be made by splatting in vertically arranged expressions)?
 4. What's the adjoint of a chain or multi-chain?
 5. As mentioned before: what's the best way to copy values into new chains, and drop old chains? Left-aligned, right-aligned, etc.?
+6. `{;}` creates a chainlink `{1}`. This is because `:({;})` parses as `:({1})`. Thankfully this is a degenerate case, but it's quite surprising when you find it.

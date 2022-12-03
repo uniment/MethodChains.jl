@@ -11,43 +11,52 @@ export @mc
 )
 
 # these are the local keywords
-const it=:it                    # pronoun for single chains
-const them=:them                # pronoun for collecting chains
-const chain_link_name=:loop     # self-referential chain name for recursion
+const it=:it                            # pronoun for single chains
+const them=:them                        # pronoun for collecting chains
+const loop_name=:loop                   # self-referential chain name for recursion
 
 macro mc(ex)
     ex = mc(ex)
 end
 
 function mc(ex)
-    esc(method_chains(ex))
+    esc(method_chains(just_do_it!(ex)))
+end
+
+function just_do_it!(ex) # revise do-blocks to use `{}` in an ok way
+    if is_expr(ex, :do) && is_expr(ex.args[2].args[1].args[1], (:braces, :bracescat))
+        f = popfirst!(ex.args[1].args)
+        pushfirst!(ex.args[1].args, ex.args[2].args[1].args[1])
+        pushfirst!(ex.args[1].args, f)
+        ex.head = :call
+        ex.args = ex.args[1].args
+    end
+    ex isa Expr && map(just_do_it!, ex.args)
+    ex
 end
 
 function method_chains(ex)
     chain, type = get_chain(ex)        
 
-    # as long var"#self#" is supported, and as long as named function syntax behavior within local scopes stays unreasonable
-    function help_recursion!(args)
-        args .= [x == chain_link_name ? :(var"#self#") : x for x ∈ args]
-        for x ∈ args
-            x isa Expr && !is_expr(x, :braces) && !is_expr(x, :bracescat) && help_recursion!(x.args)
-        end
-    end
-    type ≠ NONCHAIN && help_recursion!(chain)
+    help_recursion = :(local $loop_name = var"#self#") # as long as Julia's named function syntax doesn't behave reasonably in local scopes
 
     if type == SINGLE_CHAIN
         ex = :(let $it=$(ex.args[1]); $(single_chain(chain)...); end)  |> clean_blocks
     elseif type == SINGLE_CHAIN_LINK
 #        quotedex = "$ex"
-        ex = :($chain_link_name($it) = ($(single_chain(chain)...);)) |> clean_blocks
-        ex = :(let; $ex end) |> clean_blocks
+        chain_name = gensym(:chainlink)
+        ch = single_chain(chain)
+        ex = :($chain_name($(ch[1])) = ($help_recursion; $(ch[2:end]...);)) |> clean_blocks
+        #ex = :(let; local $ex end) |> clean_blocks
 #        ex = :(MethodChainLink{$quotedex}($ex))
     elseif type == MULTI_CHAIN
         ex = :(let $it=$(ex.args[1]), $them=($it,); $(multi_chain(chain)...); end) |> clean_blocks
     elseif type == MULTI_CHAIN_LINK
 #        quotedex = Expr(:quote, Symbol("$ex"))
-        ex = :($chain_link_name($it) = (local $them = ($it,); $(multi_chain(chain)...);)) |> clean_blocks
-        ex = :(let; $ex end) |> clean_blocks
+        chain_name = gensym(:chainlink)
+        ch = multi_chain(chain)
+        ex = :($chain_name($(ch[1])) = ($help_recursion; local $them = ($it,); $(ch[2:end]...);)) |> clean_blocks
+        #ex = :(let; local $ex end) |> clean_blocks
 #        ex = :(MethodMultiChainLink{$quotedex}($ex))
     elseif type == BROADCASTING_SINGLE_CHAIN
         # stuff
@@ -91,7 +100,7 @@ function get_chain(ex)
         return ex.args[2].args[1].args, MULTI_CHAIN
     is_expr(ex, :braces) &&
         return ex.args, SINGLE_CHAIN_LINK
-    is_expr(ex, :bracescat) &&
+    is_expr(ex, :bracescat) && 
         return ex.args, MULTI_CHAIN_LINK
     # Not implemented yet: Broadcasting. What's the best way to do it? Do I want to burn ' adjoint on it?
     #    return ..., BROADCASTING_SINGLE_CHAIN
@@ -103,6 +112,7 @@ function get_chain(ex)
 end
 
 is_expr(ex, head) = ex isa Expr && ex.head == head
+is_expr(ex, heads::Tuple) = ex isa Expr && ex.head ∈ heads
 
 """
 `single_chain(ex)``
@@ -117,16 +127,20 @@ Take an expression whose arguments a chain will be constructed from, and return 
 """
 function single_chain(exarr::Vector, (is_nested_in_multichain, pronoun) = (false, it))
     out = []
+    !is_nested_in_multichain && setuparg!(exarr, out)
+
     for e ∈ exarr
         if e == pronoun || e == :_
             continue
+        elseif is_expr(e, :(::)) && length(e.args) == 1 # type assertions
+            push!(out, :(it = it::$(first(e.args))))
         elseif do_not_assign_it(e)
             if is_expr(e, :(=)) && e.args[1] ≠ pronoun  e = Expr(:local, e)  end # BEGONE, SIDE EFFECTS!
             push!(out, e)
             if e == last(exarr) push!(out, pronoun) end
         elseif has(e, it) || do_not_call(e) || is_nested_in_multichain && has(e, them)
             push!(out, :($pronoun = $e))
-#       This code (inlines nested chainlinks) is broken for recursive chainlinks, so let's leave it out for now
+#       This code (inlines nested chainlinks instead of generating anon functions) is broken for recursive chainlinks, so let's leave it out for now
 #        elseif (is_expr(e, :braces) || is_expr(e, :bracescat)) && !any(has(sube, chain_link_name) for sube ∈ e.args) # nested, non-recursive chains
 #            push!(out, :($it = $(method_chains(Expr(:., pronoun, Expr(:quote, e))))))
         else
@@ -135,6 +149,14 @@ function single_chain(exarr::Vector, (is_nested_in_multichain, pronoun) = (false
     end
     push!(out, pronoun)
     out #𝓏𝓇
+end
+
+function setuparg!(exarr, out) # setup argument (esp. for chainlinks) w/ optional type assertion
+    if length(exarr)==0 || !is_expr(exarr[1], :(::))
+        pushfirst!(out, it)
+    else
+        pushfirst!(out, :($it::$(popfirst!(exarr).args[1])))
+    end
 end
 
 function has(ex, pronoun=it) # true if ex is an expression of "it", and it isn't contained in a nested chainlink
@@ -178,6 +200,8 @@ Creates parallel chains, which instantiate, collapse, and interact according to 
 """
 function multi_chain(exarr) # let's give this another try
     out = []
+    setuparg!(exarr, out)
+
     exarr = [is_expr(r, :row) ? r : Expr(:row, r) for r ∈ exarr if !(r isa LineNumberNode)]
     pushfirst!(exarr, Expr(:row, it)) # initialize background chain with dummy
     push!(exarr, Expr(:row, it)) # initialize background chain with dummy
