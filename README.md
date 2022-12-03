@@ -619,3 +619,4 @@ julia> @btime [1,2]./2
 4. What's the adjoint of a chain or multi-chain?
 5. As mentioned before: what's the best way to copy values into new chains, and drop old chains? Left-aligned, right-aligned, etc.?
 6. `{;}` creates a chainlink `{1}`. This is because `:({;})` parses as `:({1})`. Thankfully this is a degenerate case, but it's quite surprising when you find it.
+7. Readme: discuss type assertions, `do` statements, and `loop`.

@@ -130,6 +130,9 @@ function single_chain(exarr::Vector, (is_nested_in_multichain, pronoun) = (false
     !is_nested_in_multichain && setuparg!(exarr, out)
 
     for e ∈ exarr
+        if is_expr(e, :local) && is_expr(e.args[1], :(=))
+            throw("Cannot add `local` keyword to `$(e.args[1])`; all variable declarations are local to chain anyway.")
+        end
         if e == pronoun || e == :_
             continue
         elseif is_expr(e, :(::)) && length(e.args) == 1 # type assertions
