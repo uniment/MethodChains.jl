@@ -11,9 +11,11 @@ export @mc
 )
 
 # these are the local keywords
-const it=:it                            # pronoun for single chains
-const them=:them                        # pronoun for collecting chains
-const loop_name=:loop                   # self-referential chain name for recursion
+const it=:it                # pronoun for single chains
+const them=:them            # pronoun for collecting chains
+const it_synonym=:⬚         # unicode synonym
+const them_synonym=:⬚s      # unicode synonym
+const loop_name=:loop       # self-referential chain name for recursion
 
 macro mc(ex)
     ex = mc(ex)
@@ -39,6 +41,28 @@ function method_chains(ex)
     chain, type = get_chain(ex)        
 
     help_recursion = :(local $loop_name = var"#self#") # as long as Julia's named function syntax doesn't behave reasonably in local scopes
+    help_captures!(ex) = begin # give functions that capture `it` an instantaneous snapshot of `it` by wrapping in a let it=it...end block
+        local help_captures! = var"#self#" # necessary because
+        ex isa Expr && map(help_captures!, ex.args)
+        if is_expr(ex, (:->, :function)) || is_expr(ex, :(=)) && is_expr(ex.args[1], :call)
+            newex = Expr(ex.head, ex.args...)
+            ex.head = :let
+            ex.args = Any[:(it=it), newex]
+        end
+        true
+    end
+    replace_synonyms!(ex) = begin
+        if ex isa Expr
+            map(replace_synonyms!, ex.args)
+            for (i,v) ∈ enumerate(ex.args)
+                if v == it_synonym  ex.args[i] = it
+                elseif v == them_synonym  ex.args[i] = them
+                end
+            end
+        end
+        true
+    end
+    type ≠ NONCHAIN && help_captures!(ex) && replace_synonyms!(ex)
 
     if type == SINGLE_CHAIN
         ex = :(let $it=$(ex.args[1]); $(single_chain(chain)...); end)  |> clean_blocks

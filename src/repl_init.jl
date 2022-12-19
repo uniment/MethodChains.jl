@@ -6,7 +6,7 @@ Initiates the REPL so that every line will have `@mc` applied.
 """
 function init_repl()
     function method_chains_first(ex)
-        Internals.method_chains(ex)
+        Internals.method_chains(Internals.just_do_it!(ex))
     end
 
     #if isdefined(Main, :IJulia)
