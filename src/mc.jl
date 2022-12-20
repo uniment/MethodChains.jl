@@ -41,47 +41,22 @@ function method_chains(ex)
     chain, type = get_chain(ex)        
 
     help_recursion = :(local $loop_name = var"#self#") # as long as Julia's named function syntax doesn't behave reasonably in local scopes
-    help_captures!(ex) = begin # give functions that capture `it` an instantaneous snapshot of `it` by wrapping in a let it=it...end block
-        local help_captures! = var"#self#" # necessary because
-        ex isa Expr && map(help_captures!, ex.args)
-        if is_expr(ex, (:->, :function)) || is_expr(ex, :(=)) && is_expr(ex.args[1], :call)
-            newex = Expr(ex.head, ex.args...)
-            ex.head = :let
-            ex.args = Any[:(it=it), newex]
-        end
-        true
-    end
-    replace_synonyms!(ex) = begin
-        if ex isa Expr
-            map(replace_synonyms!, ex.args)
-            for (i,v) ∈ enumerate(ex.args)
-                if v == it_synonym  ex.args[i] = it
-                elseif v == them_synonym  ex.args[i] = them
-                end
-            end
-        end
-        true
-    end
-    type ≠ NONCHAIN && help_captures!(ex) && replace_synonyms!(ex)
+
+    type ≠ NONCHAIN && replace_synonyms!(ex) && help_captures!(ex, it) && help_captures!(ex, them)
+    type ∈ (SINGLE_CHAIN, SINGLE_CHAIN_LINK) && any(Base.Fix2(has, them), chain) && throw("Syntax error: use of `them` in single chains unsupported.")
 
     if type == SINGLE_CHAIN
         ex = :(let $it=$(ex.args[1]); $(single_chain(chain)...); end)  |> clean_blocks
     elseif type == SINGLE_CHAIN_LINK
-#        quotedex = "$ex"
         chain_name = gensym(:chainlink)
         ch = single_chain(chain)
         ex = :($chain_name($(ch[1])) = ($help_recursion; $(ch[2:end]...);)) |> clean_blocks
-        #ex = :(let; local $ex end) |> clean_blocks
-#        ex = :(MethodChainLink{$quotedex}($ex))
     elseif type == MULTI_CHAIN
         ex = :(let $it=$(ex.args[1]), $them=($it,); $(multi_chain(chain)...); end) |> clean_blocks
     elseif type == MULTI_CHAIN_LINK
-#        quotedex = Expr(:quote, Symbol("$ex"))
         chain_name = gensym(:chainlink)
         ch = multi_chain(chain)
         ex = :($chain_name($(ch[1])) = ($help_recursion; local $them = ($it,); $(ch[2:end]...);)) |> clean_blocks
-        #ex = :(let; local $ex end) |> clean_blocks
-#        ex = :(MethodMultiChainLink{$quotedex}($ex))
     elseif type == BROADCASTING_SINGLE_CHAIN
         # stuff
     elseif type == BROADCASTING_SINGLE_CHAIN_LINK # vestigial; leaving as an artifact for when this is uncovered two thousand years from now
@@ -99,6 +74,28 @@ function method_chains(ex)
     end
 
     ex #𝓏𝓇
+end
+
+help_captures!(ex, pronoun=it) = begin # give functions that capture `it` an instantaneous snapshot of `it` by wrapping in a let it=it...end block
+    ex isa Expr && map(Base.Fix2(help_captures!, pronoun), ex.args)
+    if (is_expr(ex, (:->, :function)) || is_expr(ex, :(=)) && is_expr(ex.args[1], :call)) && has(ex.args[2], pronoun) && !has(ex.args[1], pronoun)
+        newex = Expr(ex.head, ex.args...)
+        ex.head = :let
+        ex.args = Any[Expr(:(=), pronoun, pronoun), newex]
+    end
+    true
+end
+
+replace_synonyms!(ex) = begin # 
+    if ex isa Expr
+        map(replace_synonyms!, ex.args)
+        for (i,v) ∈ enumerate(ex.args)
+            if v == it_synonym  ex.args[i] = it
+            elseif v == them_synonym  ex.args[i] = them
+            end
+        end
+    end
+    true
 end
 
 function clean_blocks(ex)
@@ -135,6 +132,7 @@ function get_chain(ex)
     nothing, NONCHAIN #𝓏𝓇
 end
 
+is_expr(ex) = ex isa Expr
 is_expr(ex, head) = ex isa Expr && ex.head == head
 is_expr(ex, heads::Tuple) = ex isa Expr && ex.head ∈ heads
 
