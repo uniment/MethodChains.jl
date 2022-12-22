@@ -149,18 +149,26 @@ Take an expression whose arguments a chain will be constructed from, and return 
 """
 function single_chain(exarr::Vector, (is_nested_in_multichain, pronoun) = (false, it))
     out = []
+
+    any(e->is_expr(e, :local) && is_expr(e.args[1], :(=)), exarr) && # [k=1, 2] parses differently from [local k=1, 2]. This is *bad*, so throw error.
+        throw("Cannot add `local` keyword to `$(e.args[1])`; variable declarations local to chain scope anyway.")
+
+    # BEGONE, SIDE EFFECTS! (declare any variable assignments as local)
+    locals = findlocalvars(exarr)
+    length(locals) > 0 && push!(out, :(local $(locals...)))
+
     !is_nested_in_multichain && setuparg!(exarr, out)
 
     for e ∈ exarr
         if is_expr(e, :local) && is_expr(e.args[1], :(=))
-            throw("Cannot add `local` keyword to `$(e.args[1])`; all variable declarations are local to chain anyway.")
+
         end
         if e == pronoun || e == :_
             continue
         elseif is_expr(e, :(::)) && length(e.args) == 1 # type assertions
             push!(out, :(it = it::$(first(e.args))))
         elseif do_not_assign_it(e)
-            if is_expr(e, :(=)) && e.args[1] ≠ pronoun  e = Expr(:local, e)  end # BEGONE, SIDE EFFECTS!
+#            if is_expr(e, :(=)) && e.args[1] ≠ pronoun  e = Expr(:local, e)  end # 
             push!(out, e)
             if e == last(exarr) push!(out, pronoun) end
         elseif has(e, it) || do_not_call(e) || is_nested_in_multichain && has(e, them)
@@ -176,11 +184,19 @@ function single_chain(exarr::Vector, (is_nested_in_multichain, pronoun) = (false
     out #𝓏𝓇
 end
 
+function findlocalvars(exarr, acc=[])
+    for ex ∈ exarr
+        !is_expr(ex) && continue
+        !is_expr(ex, (:braces, :bracescat)) && findlocalvars(ex.args, acc)
+        is_expr(ex, :local) && continue
+        is_expr(ex, :(=)) && ex.args[1] isa Symbol && ex.args[1] ∉ acc && push!(acc, ex.args[1])
+    end
+    acc
+end
+
 function setuparg!(exarr, out) # setup argument (esp. for chainlinks) w/ optional type assertion
-    if length(exarr)==0 || !is_expr(exarr[1], :(::))
-        pushfirst!(out, it)
-    else
-        pushfirst!(out, :($it::$(popfirst!(exarr).args[1])))
+    if length(exarr)==0 || !is_expr(exarr[1], :(::))  pushfirst!(out, it)
+    else  pushfirst!(out, :($it::$(popfirst!(exarr).args[1])))
     end
 end
 
@@ -196,10 +212,10 @@ function has(ex, pronoun=it) # true if ex is an expression of "it", and it isn't
     false #𝓏𝓇
 end
 
-do_not_assign_it(ex) = ex isa Expr && (ex.head ∈ (:(=), :for, :while)  )#|| ex.head == :tuple && is_expr(last(ex.args), :(=))) # this is for a,b=it; doesn't work, must parenthesize (a,b) anyway 
+do_not_assign_it(ex) = is_expr(ex, (:(=), :for, :while, :local)) # || is_expr(ex, :local) && is_expr(ex.args[1], :(=)) #|| ex.head == :tuple && is_expr(last(ex.args), :(=))) # this is for a,b=it; doesn't work, must parenthesize (a,b) anyway 
 is_not_callable(ex) = ex isa Expr && ex.head ∈ (:for, :while, :comprehension, :generator, :tuple, :vect, :vcat, :ncat, :quote, :macrocall) || 
     !(ex isa Expr) && !(ex isa Symbol) 
-do_not_call(ex) = is_not_callable(ex) || is_expr(ex, :(=)) || (ex isa Expr && ex.head == :(::) && is_not_callable(ex.args[1]))
+do_not_call(ex) = is_not_callable(ex) || is_expr(ex, (:(=), :local)) || (is_expr(ex, :(::)) && is_not_callable(ex.args[1]))
 
 """
 `multi_chain(ex)`
