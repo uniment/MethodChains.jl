@@ -33,13 +33,14 @@ using Test
             } == "1, 2, 3, 4"
         @mc chain = {split(it, r",\s*"), {parse(Int, it)^2}.(it), join(it, ", ")};
         @test @mc "1, 2, 3, 4".{chain} == "1, 4, 9, 16"
-        @test @mc (9).{it+1, {it ≤ 1 ? it : loop(it-1)+loop(it-2)}} == 55
-        @test @mc (5).{it+5, {it ≤ 1 ? it : (it-1).{loop}+(it-2).{loop}}} == 55
+        @test @mc (9).{it+1, {it ≤ 1 ? it : recurse(it-1)+recurse(it-2)}} == 55
+        @test @mc (5).{it+5, {it ≤ 1 ? it : (it-1).{recurse}+(it-2).{recurse}}} == 55
         @test @mc map([1,2,3]) do {it^2} end == [1, 4, 9]
     end
 
     @testset "Multi Chains" begin
-        @test @mc (1,2,3).{them; them; them} == ((((1, 2, 3),),),)
+        @test @mc (1,2,3).{them; them; them} === ((((1, 2, 3),),),)
+        @test @mc (1:2:10).{first step last} === (1, 2, 9)
         p(x) = x+1; q(x) = 2x; r(x) = x^2
         @test @mc (1, 2, 3).{
                 it...
@@ -113,13 +114,42 @@ using Test
             n == 2 && (return [it[1]+it[2]; it[1]-it[2]]) || it # base case
             W = exp(-2π*im/n)
             # butterfly
-            loop(it[1:2:end-1])       loop(it[2:2:end])
+            recurse(it[1:2:end-1])    recurse(it[2:2:end])
             _                         it.*W.^(0:n÷2-1)
         #   ⋮        ⋱                ⋰         ⋮
                         (x1,x2)=them
         #   ⋮        ⋰                ⋱         ⋮
             [x1.+x2          ;            x1.-x2]::Vector{ComplexF64}
         }
+
+        @mc toy_fft = {
+            n = length(it)
+            if n == 2  ComplexF64[it[1]+it[2]; it[1]-it[2]]
+            else it.{
+                W = exp(-2π*im/n)
+                recurse(it[1:2:end-1])    recurse(it[2:2:end])
+                _                         it.*W.^(0:n÷2-1)
+            #   ⋮        ⋱                ⋰         ⋮
+                            (x1,x2)=them
+            #   ⋮        ⋰                ⋱         ⋮
+                [x1.+x2          ;            x1.-x2]
+            } end
+        }
+
+        @mc function toy_fft(inputvec)
+            d = Vector{ComplexF64}(inputvec)
+            n = length(d)
+            if n == 2  return [d[1]+d[2]; d[1]-d[2]]  end
+            d.{
+                W = exp(-2π*im/n)
+                toy_fft(it[1:2:end-1])    toy_fft(it[2:2:end])
+                _                         it.*W.^(0:n÷2-1)
+            #   ⋮        ⋱                ⋰         ⋮
+                            (x1,x2)=them
+            #   ⋮        ⋰                ⋱         ⋮
+                [x1.+x2          ;            x1.-x2]
+            }
+        end
 
         @test @mc [1,2,3,4].{toy_fft} ≈ [10.0 + 0.0im, -2.0 + 2.0im, -2.0 + 0.0im, -2.0 - 2.0im]
 

@@ -15,7 +15,7 @@ const it=:it                # pronoun for single chains
 const them=:them            # pronoun for collecting chains
 const it_synonym=:⬚         # unicode synonym
 const them_synonym=:⬚s      # unicode synonym
-const loop_name=:loop       # self-referential chain name for recursion
+const loop_name=:recurse    # self-referential chain name for recursion
 
 macro mc(ex)
     ex = mc(ex)
@@ -245,6 +245,7 @@ function multi_chain(exarr) # let's give this another try
 
     exarr = [is_expr(r, :row) ? r : Expr(:row, r) for r ∈ exarr if !(r isa LineNumberNode)]
     pushfirst!(exarr, Expr(:row, it)) # initialize background chain with dummy
+    length(last(exarr).args) > 1 && push!(exarr, Expr(:row, them))
     push!(exarr, Expr(:row, it)) # initialize background chain with dummy
 
     # helper fcns
