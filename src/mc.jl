@@ -4,10 +4,8 @@ export @mc
 
 @enum(CHAIN_TYPE,
     NONCHAIN,
-    SINGLE_CHAIN,                   MULTI_CHAIN,
-    SINGLE_CHAIN_LINK,              MULTI_CHAIN_LINK,
-    BROADCASTING_SINGLE_CHAIN,      BROADCASTING_MULTI_CHAIN,
-    BROADCASTING_SINGLE_CHAIN_LINK, BROADCASTING_MULTI_CHAIN_LINK,
+    CHAIN_TUPLE,                    CHAIN_SEQUENCE,
+    CHAIN_TUPLE_FUN,                CHAIN_SEQUENCE_FUN
 )
 
 # these are the local keywords
@@ -17,15 +15,10 @@ const it_synonym=:⬚         # unicode synonym
 const them_synonym=:⬚s      # unicode synonym
 const loop_name=:recurse    # self-referential chain name for recursion
 
-macro mc(ex)
-    ex = mc(ex)
-end
+macro mc(ex)  esc(mc!(ex))  end
+mc!(ex) = method_chains(just_do_it!(ex))
 
-function mc(ex)
-    esc(method_chains(just_do_it!(ex)))
-end
-
-function just_do_it!(ex) # revise do-blocks to use `{}` in an ok way
+just_do_it!(ex) = let # revise do-blocks to use `{}` in an ok way
     if is_expr(ex, :do) && is_expr(ex.args[2].args[1].args[1], (:braces, :bracescat))
         f = popfirst!(ex.args[1].args)
         pushfirst!(ex.args[1].args, ex.args[2].args[1].args[1])
@@ -37,46 +30,31 @@ function just_do_it!(ex) # revise do-blocks to use `{}` in an ok way
     ex
 end
 
-function method_chains(ex)
-    chain, type = get_chain(ex)        
-
-    help_recursion = :(local $loop_name = var"#self#") # as long as Julia's named function syntax doesn't behave reasonably in local scopes
-
+method_chains(ex) = let (chain, type) = get_chain(ex),  help_recursion = :(local $loop_name = var"#self#"; nothing;)
     type ≠ NONCHAIN && replace_synonyms!(ex) && help_captures!(ex, it) && help_captures!(ex, them)
-    type ∈ (SINGLE_CHAIN, SINGLE_CHAIN_LINK) && any(Base.Fix2(has, them), chain) && throw("Syntax error: use of `them` in single chains unsupported.")
+    type ∈ (CHAIN_TUPLE, CHAIN_TUPLE_FUN) && any(Base.Fix2(has, them), chain) && throw("Syntax error: use of `them` in single chains unsupported.")
 
-    if type == SINGLE_CHAIN
-        ex = :(let $it=$(ex.args[1]); $(single_chain(chain)...); end)  |> clean_blocks
-    elseif type == SINGLE_CHAIN_LINK
+    if type == CHAIN_TUPLE
+        ex = :(let $it=$(ex.args[1]); $(chain_tuple(chain)...); end)  |> clean_blocks
+    elseif type == CHAIN_TUPLE_FUN
         chain_name = gensym(:chainlink)
-        ch = single_chain(chain)
-        ex = :($chain_name($(ch[1])) = ($help_recursion; $(ch[2:end]...);)) |> clean_blocks
-    elseif type == MULTI_CHAIN
+        ch = chain_tuple(chain)
+        ex = :($chain_name($it) = ($help_recursion; $(ch...);)) |> clean_blocks
+    elseif type == CHAIN_SEQUENCE
         ex = :(let $it=$(ex.args[1]), $them=($it,); $(multi_chain(chain)...); end) |> clean_blocks
-    elseif type == MULTI_CHAIN_LINK
+    elseif type == CHAIN_SEQUENCE_FUN
         chain_name = gensym(:chainlink)
         ch = multi_chain(chain)
         ex = :($chain_name($(ch[1])) = ($help_recursion; local $them = ($it,); $(ch[2:end]...);)) |> clean_blocks
-    elseif type == BROADCASTING_SINGLE_CHAIN
-        # stuff
-    elseif type == BROADCASTING_SINGLE_CHAIN_LINK # vestigial; leaving as an artifact for when this is uncovered two thousand years from now
-        quotedex = Expr(:quote, Symbol("$ex"))
-        ex = :(it -> broadcast(it -> ($(single_chain(chain)...)), it)) |> clean_blocks
-        ex = :(BroadcastingMethodChainLink{$quotedex}($ex))
-    elseif type == BROADCASTING_MULTI_CHAIN
-        # stuff
-    elseif type == BROADCASTING_MULTI_CHAIN_LINK
-        # stuff
     end
 
     if ex isa Expr && !is_expr(ex, :quote)
-        ex.args = map(method_chains, ex.args)
+        ex.args .= map(method_chains, ex.args)
     end
-
     ex #𝓏𝓇
 end
 
-help_captures!(ex, pronoun=it) = begin # give functions that capture `it` an instantaneous snapshot of `it` by wrapping in a let it=it...end block
+help_captures!(ex, pronoun=it) = let # give functions that capture `it` an instantaneous snapshot of `it` by wrapping in a let it=it...end block
     ex isa Expr && map(Base.Fix2(help_captures!, pronoun), ex.args)
     if (is_expr(ex, (:->, :function)) || is_expr(ex, :(=)) && is_expr(ex.args[1], :call)) && has(ex.args[2], pronoun) && !has(ex.args[1], pronoun)
         newex = Expr(ex.head, ex.args...)
@@ -86,22 +64,19 @@ help_captures!(ex, pronoun=it) = begin # give functions that capture `it` an ins
     true
 end
 
-replace_synonyms!(ex) = begin # 
-    if ex isa Expr
-        map(replace_synonyms!, ex.args)
-        for (i,v) ∈ enumerate(ex.args)
-            if v == it_synonym  ex.args[i] = it
-            elseif v == them_synonym  ex.args[i] = them
-            end
+replace_synonyms!(ex) = true
+replace_synonyms!(ex::Expr) = let  
+    foreach(replace_synonyms!, ex.args)
+    for (i,v) ∈ enumerate(ex.args)
+        if v == it_synonym  ex.args[i] = it
+        elseif v == them_synonym  ex.args[i] = them
         end
     end
     true
 end
 
-function clean_blocks(ex)
-    if is_expr(ex, :(=)) || is_expr(ex, :let)
-        ex.args[2].args = filter(x->!(x isa LineNumberNode), ex.args[2].args)
-    end
+clean_blocks(ex) = let q = is_expr(ex, :(=)) || is_expr(ex, :let)
+    if q;  ex.args[2].args = filter(x->!(x isa LineNumberNode), ex.args[2].args)  end
     ex
 end
 
@@ -112,29 +87,31 @@ Returns what type of a chain `ex` is, and an expression whose arguments are the 
 
 The return value is a tuple `(chainex::Expr, type::CHAIN_TYPE)`.
 """
-function get_chain(ex)
+get_chain(ex) = let
     is_expr(ex, :.) && length(ex.args) < 2 && return nothing, NONCHAIN
     # x.{y} becomes x.:({y}) so we have to cut through that
-    is_expr(ex, :.) && is_expr(ex.args[2], :quote) && is_expr(ex.args[2].args[1], :braces) &&
-        return ex.args[2].args[1].args, SINGLE_CHAIN
-    is_expr(ex, :.) && is_expr(ex.args[2], :quote) && is_expr(ex.args[2].args[1], :bracescat) &&
-        return ex.args[2].args[1].args, MULTI_CHAIN
-    is_expr(ex, :braces) &&
-        return ex.args, SINGLE_CHAIN_LINK
-    is_expr(ex, :bracescat) && 
-        return ex.args, MULTI_CHAIN_LINK
-    # Not implemented yet: Broadcasting. What's the best way to do it? Do I want to burn ' adjoint on it?
-    #    return ..., BROADCASTING_SINGLE_CHAIN
-    #    return ..., BROADCASTING_MULTI_CHAIN
-    #    return ..., BROADCASTING_SINGLE_CHAIN_LINK
-    #    return ..., BROADCASTING_MULTI_CHAIN_LINK
-
+    is_expr(ex, :.) && is_expr(ex.args[2], :quote) && is_expr(ex.args[2].args[1], :braces)      && return ex.args[2].args[1].args, CHAIN_TUPLE
+    is_expr(ex, :.) && is_expr(ex.args[2], :quote) && is_expr(ex.args[2].args[1], :bracescat)   && return ex.args[2].args[1].args, CHAIN_SEQUENCE
+    is_expr(ex, :braces)    && return ex.args, CHAIN_TUPLE_FUN
+    is_expr(ex, :bracescat) && return ex.args, CHAIN_SEQUENCE_FUN
     nothing, NONCHAIN #𝓏𝓇
 end
 
 is_expr(ex) = ex isa Expr
 is_expr(ex, head) = ex isa Expr && ex.head == head
 is_expr(ex, heads::Tuple) = ex isa Expr && ex.head ∈ heads
+
+chain_tuple(exarr::Vector) = let elems = []
+    for e ∈ exarr
+        if e ≡ it || e ≡ :_;  push!(elems, it)
+        elseif is_expr(e, :(::)) && length(e.args) == 1;  push!(out, :(it::$(first(e.args))))  # type assertions
+        elseif do_not_assign_it(e) || has(e, it) || do_not_call(e);  push!(elems, e)
+        else  push!(elems, Expr(:call, e, it))  end
+    end
+    length(elems) ≤ 1 && return elems
+    out = Expr(:tuple); out.args = elems
+    Any[out]
+end
 
 """
 `single_chain(ex)``
@@ -147,7 +124,7 @@ Take an expression whose arguments a chain will be constructed from, and return 
 5. If a non-callable object, such as a tuple, generator, or comprehension, simply assign to `it`
 6. Otherwise, try to call it and assign to `it=`.
 """
-function single_chain(exarr::Vector, (is_nested_in_multichain, pronoun) = (false, it))
+single_chain(exarr::Vector, (is_nested_in_multichain, pronoun) = (false, it)) = let
     out = []
 
     any(e->is_expr(e, :local) && is_expr(e.args[1], :(=)), exarr) && # [k=1, 2] parses differently from [local k=1, 2]. This is *bad*, so throw error.
@@ -173,9 +150,6 @@ function single_chain(exarr::Vector, (is_nested_in_multichain, pronoun) = (false
             if e == last(exarr) push!(out, pronoun) end
         elseif has(e, it) || do_not_call(e) || is_nested_in_multichain && has(e, them)
             push!(out, :($pronoun = $e))
-#       This code (inlines nested chainlinks instead of generating anon functions) is broken for recursive chainlinks, so let's leave it out for now
-#        elseif (is_expr(e, :braces) || is_expr(e, :bracescat)) && !any(has(sube, chain_link_name) for sube ∈ e.args) # nested, non-recursive chains
-#            push!(out, :($it = $(method_chains(Expr(:., pronoun, Expr(:quote, e))))))
         else
             push!(out, :($it = $(Expr(:call, e, pronoun))))
         end
@@ -184,7 +158,7 @@ function single_chain(exarr::Vector, (is_nested_in_multichain, pronoun) = (false
     out #𝓏𝓇
 end
 
-function findlocalvars(exarr, acc=[])
+findlocalvars(exarr, acc=[]) = let
     for ex ∈ exarr
         !is_expr(ex) && continue
         !is_expr(ex, (:braces, :bracescat)) && findlocalvars(ex.args, acc)
@@ -194,17 +168,17 @@ function findlocalvars(exarr, acc=[])
     acc
 end
 
-function setuparg!(exarr, out) # setup argument (esp. for chainlinks) w/ optional type assertion
+setuparg!(exarr, out) = let # setup argument (esp. for chainlinks) w/ optional type assertion
     if length(exarr)==0 || !is_expr(exarr[1], :(::))  pushfirst!(out, it)
     else  pushfirst!(out, :($it::$(popfirst!(exarr).args[1])))
     end
 end
 
-function has(ex, pronoun=it) # true if ex is an expression of "it", and it isn't contained in a nested chainlink
+has(ex, pronoun=it) = let # true if ex is an expression of "it", and it isn't contained in a nested chainlink
     (ex == pronoun || ex isa Expr && ex.head == pronoun) && return true
     ex isa Expr || return false
     # omit sub-chainlink local scopes
-    get_chain(ex)[2] ∈ (NONCHAIN, SINGLE_CHAIN, MULTI_CHAIN, BROADCASTING_MULTI_CHAIN, BROADCASTING_SINGLE_CHAIN) || return false
+    get_chain(ex)[2] ∈ (NONCHAIN, CHAIN_TUPLE, CHAIN_SEQUENCE) || return false
     for arg ∈ ex.args
         arg == pronoun && return true
         arg isa Expr && has(arg, pronoun) && return true
@@ -239,7 +213,7 @@ Creates parallel chains, which instantiate, collapse, and interact according to 
     - if the next line has `them`, then any unclaimed chains are slurped into it
 
 """
-function multi_chain(exarr) # let's give this another try
+multi_chain(exarr) = let # let's give this another try
     out = []
     setuparg!(exarr, out)
 
@@ -250,7 +224,7 @@ function multi_chain(exarr) # let's give this another try
 
     # helper fcns
     row_width(row) = length(row.args)
-    does_splat(row) = any(Base.Fix2(is_expr, :...), row.args)
+    does_splat(row) = any(x->is_expr(x, :...), row.args)# && x.args[1] ∈ (it, them), row.args)
     does_slurp(row) = has(row, them)
     do_synchronize(oldrow, newrow) = row_width(oldrow) ≠ row_width(newrow) || does_splat(oldrow) || has(newrow, them)
 

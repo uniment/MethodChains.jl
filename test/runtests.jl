@@ -2,18 +2,23 @@ using MethodChains
 using Test
 
 @testset "MethodChains.jl" begin
-    @testset "Single Chains" begin
+    @mc @testset "Chain Tuples" begin
+        @test (1:2:9).{first, last, step} === (1, 9, 2)
+
+    end
+
+    @testset "Single Sequential Chains" begin
         x=2
         f(x) = x^2
         g(x) = x+1
-        @test @mc g(√(f(x)-1)) == x.{f, √(it-1), g}
+        @test @mc g(√(f(x)-1)) == x.{f; √(it-1); g}
         @test @mc map({it^2}, 1:10) == (1:10).{map({it^2}, it)}
         @test @mc map({it^2}, 1:10) == map(x->x^2, 1:10)
         @test @mc (1,2,5).{(first(it):last(it)...,)} == (1:5...,)
-        @test @mc "1,2,3".{split(it,","), parse.(Int,it), it.^2, join(it,",")} == "1,4,9"
-        @mc avg = {len=length(it), sum(it)/len}
+        @test @mc "1,2,3".{split(it,","); parse.(Int,it); it.^2; join(it,",")} == "1,4,9"
+        @mc avg = {len=length(it); sum(it)/len}
         @test @mc (1,2,3).{avg} == sum((1,2,3))/3
-        @test @mc Dict(:a=>1, :b=>2, :c=>3).{for k ∈ keys(it) it[k]=it[k]^2 end} == Dict(:a=>1, :b=>4, :c=>9)
+        @test @mc Dict(:a=>1, :b=>2, :c=>3).{for k ∈ keys(it) it[k]=it[k]^2 end; it} == Dict(:a=>1, :b=>4, :c=>9)
         @test @mc "a=1 b=2 c=3".{
                 split
                 map({
@@ -25,20 +30,20 @@ using Test
         @test @mc [1,2,3].{map({it^2}, it)} == [1, 4, 9]
         @test @mc [1,2,3].{join(it, ", ")} == "1, 2, 3"
         @test @mc "1".{parse(Int, it)} == 1
-        @test @mc (1,2).{(a,b)=it, (;b,a)} == (b=2, a=1)
+        @test @mc (1,2).{(a,b)=it; (;b,a)} == (b=2, a=1)
         @test @mc "1 2, 3; hehe4".{
                 eachmatch(r"(\d+)", it)
-                map({first, parse(Int, it)}, it)
+                map({first; parse(Int, it)}, it)
                 join(it, ", ")
             } == "1, 2, 3, 4"
-        @mc chain = {split(it, r",\s*"), {parse(Int, it)^2}.(it), join(it, ", ")};
+        @mc chain = {split(it, r",\s*"); {parse(Int, it)^2}.(it); join(it, ", ")};
         @test @mc "1, 2, 3, 4".{chain} == "1, 4, 9, 16"
-        @test @mc (9).{it+1, {it ≤ 1 ? it : recurse(it-1)+recurse(it-2)}} == 55
-        @test @mc (5).{it+5, {it ≤ 1 ? it : (it-1).{recurse}+(it-2).{recurse}}} == 55
+        @test @mc (9).{it+1; {it ≤ 1 ? it : recurse(it-1)+recurse(it-2)}} == 55
+        @test @mc (5).{it+5; {it ≤ 1 ? it : (it-1).{recurse}+(it-2).{recurse}}} == 55
         @test @mc map([1,2,3]) do {it^2} end == [1, 4, 9]
     end
 
-    @testset "Multi Chains" begin
+    @testset "Multi Sequential Chains" begin
         @test @mc (1,2,3).{them; them; them} === ((((1, 2, 3),),),)
         @test @mc (1:2:10).{first step last} === (1, 2, 9)
         p(x) = x+1; q(x) = 2x; r(x) = x^2
@@ -77,7 +82,7 @@ using Test
             } == (1,2,3)
         @test @mc (1,2,3).{them; them; them} == ((((1, 2, 3),),),)
         @test @mc ((0:10...,).{
-            avg = {len=length(it), sum(it)/len}
+            avg = {len=length(it); sum(it)/len}
             μ = it.{avg}
             it .- μ
  
@@ -88,7 +93,7 @@ using Test
             them
         } .≈ (3.1622776601683795, 10.0, 5.0)) |> all
 
-        @test @mc (3.141).{{sin}, cos} == (3.141).{{sin}; cos} == cos(sin(3.141))
+        @test @mc (3.141).{{sin}; cos} == cos(sin(3.141))
 
         @mc toy_fft = {
             # setup

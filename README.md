@@ -28,7 +28,7 @@ or you can invoke it on an entire block of expressions:
 ```julia
 @mc function foo(x)
     y = x.{f, g}
-    z = y.{h}
+    z = y.{g; h}
 end
 ```
 
@@ -52,9 +52,9 @@ MethodChains.init_repl()
 
 The basic idea of a method chain is simple:
 
-For an object `x`, you can call a sequence of functions `f, g, h` on it like so:
+For an object `x`, you can call a sequence of functions `f; g; h` on it like so:
 ```julia
-y = x.{f, g, h}
+y = x.{f; g; h}
 ```
 
 This is equivalent to:
@@ -69,23 +69,34 @@ y = x.{f}.{g}.{h}
 
 (why you'd do that I don't know, but that's none of my beeswax!)
 
+That was for calling three functions *in sequence*. But we can also do this!
+```julia
+z = x.{f, g, h}
+```
+That's equivalent to:
+```julia
+z = (f(x), g(x), h(x))
+```
+
 You'll often find it handy to use chaining syntax even when the "chain" is only one element long, and that's dandy!
 
 ```julia
 my_arr.{length}.prop + 1
-
 ```
 
 Example:
 
 ```julia
-julia> randn(100).{maximum, sqrt}
+julia> randn(100).{maximum; sqrt}
 1.4735877523876308
+
+julia> (1:2:9).{first, last, step}
+(1, 9, 2)
 ```
 
 You can also make a method chain and call it later, instead of immediately executing it:
 ```julia
-m = {f, g, h}
+m = {f; g; h}
 y = x.{m}
 # or
 y = m(x)
@@ -96,7 +107,7 @@ In this case, `m` is called a "chainlink." Chainlinks are single-input, single-o
 You can also construct a chainlink and immediately call it, but that's not really necessary (and takes greater compile time than putting the chain in suffix position):
 
 ```julia
-y = {f, g, h}(x)
+y = {f; g; h}(x)
 ```
 
 Now, unless every function is a Clojure-style transducer, or another chainlink, chances are that your functions won't compose perfectly like this. This situation happens in real life too—and to handle this, in the English language we reserve the pronoun "it," to give the object a local and temporary name to allow short (but flexible) manipulations spliced between larger functions. So, `MethodChains` also uses `it`.
@@ -108,13 +119,13 @@ julia> f(x) = x^2;
 
 julia> g(x) = x+1;
 
-julia> x.{f, √(it - 1), g}
+julia> x.{f; √(it - 1); g}
 2.732050807568877
 ```
 
 To better understand what's going on, you can run `@macroexpand`:
 ```julia
-julia> @macroexpand @mc x.{f, √(it - 1), g}
+julia> @macroexpand @mc x.{f; √(it - 1); g}
 :(let it = x
       it = f(it)
       it = √(it - 1)
@@ -124,7 +135,7 @@ julia> @macroexpand @mc x.{f, √(it - 1), g}
 
 When constructing a chainlink, a function of `it` is created:
 ```julia
-julia> @macroexpand @mc {f, √(it - 1), g}
+julia> @macroexpand @mc {f; √(it - 1); g}
 :(MethodChainLink{Symbol("{f, √(it - 1), g}")}((it->begin
               it = f(it)
               it = √(it - 1)
@@ -151,10 +162,10 @@ julia> x.{(first(it):last(it)...,)}
 julia> (x.{first}:x.{last}...,)
 (0, 1, 2, 3, 4, 5)
 
-julia> x.{x.{sum} > 7 ? maximum : minimum}
+julia> x.{sum(x) > 7 ? maximum : minimum}
 5
 
-julia> (1,2,3).{it.^2, sum, sqrt}
+julia> (1,2,3).{it.^2; sum; sqrt}
 3.7416573867739413
 
 julia> "1,2,3".{split(it,","), parse.(Int,it), it.^2, join(it,",")}
@@ -165,15 +176,12 @@ Now, the rule for whether to *call* the expression, or to leave it intact, or to
 
 ```julia
 julia> const avg = {len=it.{length}; sum(it)/len}
-{len = length(it), sum(it) / len}
+##chainlink#295 (generic function with 1 method)
 
-julia> (1,2,3).{avg}
-2.0
+julia> const stdev = {μ = avg(it); it.-μ; it.^2; avg; sqrt};
 
-julia> const stdev = {μ = it.{avg}, it.-μ, it.^2, avg, sqrt};
-
-julia> (1,2,3).{stdev}
-0.816496580927726
+julia> (1,2,3).{avg, stdev}
+(2.0, 0.816496580927726)
 
 julia> Dict(:a=>1, :b=>2, :c=>3).{for k ∈ keys(it) it[k]=it[k]^2 end}
 Dict{Symbol, Int64} with 3 entries:
@@ -191,6 +199,7 @@ Namely, regarding expressions inside the curly braces:
 * If an expression is a non-callable type, such as a comprehension, generator, tuple, or vector, then it is not called and is simply assigned to `it`.
 * If an expression is an expression of `it`, then it is simply executed and assigned to `it`.
 * Otherwise it's assumed that the expression evaluates to something callable, and so it should be called on `it` and assigned to `it`. This is the default behavior.
+* A sequence of expressions is delimited with semicolons `;` or newlines; delimit with commas `,` to calculate multiple values and collect into a tuple.
 
 If it's desired to override the default behavior of method calling, you can make an explicit assignment to `it`.
 
@@ -206,10 +215,10 @@ If it's desired to override the default behavior of method calling, you can make
 
 *Operator Precedence*
 ```julia
-julia> (1,2).{(a,b)=it,(;b,a)}.b
+julia> (1,2).{(a,b)=it; (;b,a)}.b
 2
 
-julia> (1,2).{(a,b)=it,(;b,a)}[1]
+julia> (1,2).{(a,b)=it; (;b,a)}[1]
 2
 ```
 
@@ -226,9 +235,9 @@ a.{b(it[3])}
 
 ```julia
 julia> [1,2,3].{
-           filter(isodd, it),
-           map({it^2}, it),
-           sum,
+           filter(isodd, it)
+           map({it^2}, it)
+           sum
            sqrt
        }
 3.1622776601683795
@@ -274,7 +283,7 @@ julia> "1 2, 3; hehe4".{
 *Saving a Chainlink*
 
 ```julia
-julia> chainlink = {split(it, r",\s*"), {parse(Int, it)^2}.(it), join(it, ", ")};
+julia> chainlink = {split(it, r",\s*"); {parse(Int, it)^2}.(it); join(it, ", ")};
 
 julia> "1, 2, 3, 4".{chainlink}
 "1, 4, 9, 16"
@@ -295,9 +304,9 @@ process_bags.{into(airplane, it, pallets)}
 
 # *Advanced Use*
 
-That was fun! This chaining syntax allows for really basic composition, like `x.{f, g, h}`, but also some more advanced stuff too like `x.{f, it.a, g}` or `x.{i for i ∈ 1:it}`. 
+That was fun! This chaining syntax allows for really basic composition like `x.{f; g; h}`, and basic collections like `x.{f, g, h}`, but also some more advanced stuff too like `x.{f; it.a; g}` or `x.{i for i ∈ 1:it}`. 
 
-Why would you use this instead of normal function call syntax? Because on every line you're presumed *most likely* to call a function on, or otherwise manipulate, the object `it`, this default behavior frequently enables very concise expressions. It also hints to the IDE autocomplete what type of object you're likely about to call a function on, as well as providing a natural "flow" of thought as the object passes through a sequence of transformations. Finally, calling the chain immediately (e.g. `x.{expr1, expr2, ...}`) doesn't allocate a function, which keeps compile time minimized, while still being a shorthand for creating locally-scoped variables.
+Why would you use this instead of normal function call syntax? Because in every expression you're presumed *most likely* to call a function on, or otherwise manipulate, the object `it`, this default behavior frequently enables very concise expressions. It also hints to the IDE autocomplete what type of object you're likely about to call a function on, as well as providing a natural "flow" of thought as the object passes through a sequence of transformations. Finally, calling the chain immediately (e.g. `x.{expr1; expr2; ...}`) doesn't allocate a function, which keeps compile time minimized, while still being a shorthand for creating locally-scoped variables.
 
 But there's even more to it. (This is the *really* experimental feature of this syntax, so please play with it and offer feedback!)
 
@@ -554,9 +563,9 @@ GLHF!
 
 When defining a chainlink, e.g.
 
-`chain = {f, g, h}`,
+`chain = {f; g; h}`,
 
-a function is created, and on its first run with a particular type it will be compiled (whether called by `x.{chain}` or by `chain(x)`). In contrast, when calling `x.{f, g, h}` directly, no function is created or compiled, so execution occurs with minimum time and resources.
+a function is created, and on its first run with a particular type it will be compiled (whether called by `x.{chain}` or by `chain(x)`). In contrast, when calling `x.{f; g; h}` directly, no function is created or compiled, so execution occurs with minimum time and resources.
 
 If it's necessary to save a `chain` as a global object, it's recommended to set it to a constant value `const`. This is to avoid type-instability, which causes slower runtime:
 
@@ -616,7 +625,7 @@ julia> @btime [1,2]./2
 1. I don't have multi-threading implemented yet.
 2. ~~It might also be nice to have macros to make it easier to call `println`, or otherwise ignore an expression's return value.~~ `@show` works perfectly.
 3. To add: subchain splatting (so that long rows can be made by splatting in vertically arranged expressions)?
-4. What's the adjoint of a chain or multi-chain?
+4. `x.{f}` returns `f(x)`, and `x.{f,g}` returns `(f(x), g(x))`, but `x.{f,}` unfortunately returns `f(x)` because the parser doesn't tell them apart. This is pretty unfortunate.
 5. As mentioned before: what's the best way to copy values into new chains, and drop old chains? Left-aligned, right-aligned, etc.?
 6. `{;}` creates a chainlink `{1}`. This is because `:({;})` parses as `:({1})`. Thankfully this is a degenerate case, but it's quite surprising when you find it.
-7. Readme: discuss type assertions, `do` statements, and `loop`.
+7. Readme: discuss type assertions, `do` statements, and `recurse`.
