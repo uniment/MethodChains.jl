@@ -250,7 +250,7 @@ df.{
     dropmissing
     filter(:id => >(6), it)
     groupby(it, :group)
-    (println(it); it) # show intermediate value, discard return value
+    @show it
     combine(it, :age => sum)
 }
 ```
@@ -452,13 +452,13 @@ To inspect the intermediate values mid-chain:
 ```julia
 julia> (0:10...,).{
            avg = {len=it.{length}; sum(it)/len}
-           μ = it.{avg}             ; (println(μ); it)
-           it .- μ                  ; (println(it); it)
+           μ = it.{avg}             ; (@show μ; it)
+           it .- μ                  ; @show it
 
          # stdev   var     mad
-           it.^2   it.^2   abs.(it) ; (println(them); them)...
-           avg     avg     maximum  ; (println(them); them)...
-           sqrt    _       _        ; (println(them); them)...
+           it.^2   it.^2   abs.(it) ; @show(them)...
+           avg     avg     maximum  ; @show(them)...
+           sqrt    _       _        ; @show(them)...
            them
        }
 (3.1622776601683795, 10.0, 5.0)
