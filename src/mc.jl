@@ -127,19 +127,17 @@ Take an expression whose arguments a chain will be constructed from, and return 
 single_chain(exarr::Vector, (is_nested_in_multichain, pronoun) = (false, it)) = let
     out = []
 
-    any(e->is_expr(e, :local) && is_expr(e.args[1], :(=)), exarr) && # [k=1, 2] parses differently from [local k=1, 2]. This is *bad*, so throw error.
-        throw("Cannot add `local` keyword to `$(e.args[1])`; variable declarations local to chain scope anyway.")
+    # change of heart: we don't need to enforce that every assignment is `local`.
+    #any(e->is_expr(e, :local) && is_expr(e.args[1], :(=)), exarr) && # [k=1, 2] parses differently from [local k=1, 2]. This is *bad*, so throw error.
+    #    throw("Cannot add `local` keyword to `$(e.args[1])`; variable declarations local to chain scope anyway.")
 
-    # BEGONE, SIDE EFFECTS! (declare any variable assignments as local)
-    locals = findlocalvars(exarr)
-    length(locals) > 0 && push!(out, :(local $(locals...)))
+    ## BEGONE, SIDE EFFECTS! (declare any variable assignments as local)
+    #locals = findlocalvars(exarr)
+    #length(locals) > 0 && push!(out, :(local $(locals...)))
 
     !is_nested_in_multichain && setuparg!(exarr, out)
 
     for e ∈ exarr
-        if is_expr(e, :local) && is_expr(e.args[1], :(=))
-
-        end
         if e == pronoun || e == :_
             continue
         elseif is_expr(e, :(::)) && length(e.args) == 1 # type assertions
