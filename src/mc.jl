@@ -184,7 +184,7 @@ has(ex, pronoun=it) = let # true if ex is an expression of "it", and it isn't co
     false #𝓏𝓇
 end
 
-do_not_assign_it(ex) = is_expr(ex, (:(=), :for, :while, :local)) # || is_expr(ex, :local) && is_expr(ex.args[1], :(=)) #|| ex.head == :tuple && is_expr(last(ex.args), :(=))) # this is for a,b=it; doesn't work, must parenthesize (a,b) anyway 
+do_not_assign_it(ex) = is_expr(ex, (:(=), :for, :while, :local, :global)) # || is_expr(ex, :local) && is_expr(ex.args[1], :(=)) #|| ex.head == :tuple && is_expr(last(ex.args), :(=))) # this is for a,b=it; doesn't work, must parenthesize (a,b) anyway 
 is_not_callable(ex) = ex isa Expr && ex.head ∈ (:for, :while, :comprehension, :generator, :tuple, :vect, :vcat, :ncat, :quote, :macrocall) || 
     !(ex isa Expr) && !(ex isa Symbol) 
 do_not_call(ex) = is_not_callable(ex) || is_expr(ex, (:(=), :local)) || (is_expr(ex, :(::)) && is_not_callable(ex.args[1]))
